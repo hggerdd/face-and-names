@@ -1,0 +1,33 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# SQLite database
+*.db
+*.db-shm
+*db-jour
+
+# Image folders
+images/
+faces/
+face_recognition_models/
+face_recognition_models copy/
+*.pth
+
+# Logs
+*.log
+
+# Model files
+models/
+*.joblib
+*.pth
+
+# yolo model pretrained (is it allowed?)
+yolov11n-face.pt
