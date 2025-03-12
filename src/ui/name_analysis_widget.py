@@ -8,9 +8,9 @@ from PyQt6.QtGui import QPixmap, QImage
 from PIL import Image, ImageOps, ImageEnhance
 import io
 import logging
-import sqlite3
 from .shared.face_image_widget import FaceImageWidget
 from .shared.image_preview import ImagePreviewWindow
+from .shared.image_utils import ImageProcessor
 
 class NameAnalysisWidget(QWidget):
     """Widget for analyzing faces by name and managing name changes."""
@@ -112,18 +112,7 @@ class NameAnalysisWidget(QWidget):
             if not name:
                 return
                 
-            # Get faces with their image_ids
-            conn = sqlite3.connect(self.db_manager.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT f.id, f.face_image, f.image_id
-                FROM faces f
-                WHERE f.name = ? AND f.face_image IS NOT NULL
-                ORDER BY f.id
-            ''', (name,))
-            faces = cursor.fetchall()
-            conn.close()
-
+            faces = self.db_manager.get_faces_by_name(name)
             if not faces:
                 self.status_label.setText(f"No faces found for '{name}'")
                 return
@@ -183,18 +172,10 @@ class NameAnalysisWidget(QWidget):
         widget = self.sender()
         if widget and hasattr(widget, 'image_id'):
             try:
-                # Get original image from thumbnails table
                 image_data = self.db_manager.get_image_data(widget.image_id)
-                if image_data:
-                    image = Image.open(io.BytesIO(image_data)).convert('RGB')
-                    # Scale image to fit preview area while maintaining aspect ratio
-                    preview_size = self.preview_label.size()
-                    image.thumbnail((preview_size.width(), preview_size.height()))
-                    qimage = QImage(image.tobytes('raw', 'RGB'),
-                                  image.width, image.height,
-                                  3 * image.width,
-                                  QImage.Format.Format_RGB888)
-                    pixmap = QPixmap.fromImage(qimage)
+                preview_size = self.preview_label.size()
+                pixmap = ImageProcessor.create_pixmap_from_data(image_data, preview_size)
+                if pixmap:
                     self.preview_label.setPixmap(pixmap)
                     self.preview_label.show()
             except Exception as e:
@@ -205,15 +186,9 @@ class NameAnalysisWidget(QWidget):
         widget = self.sender()
         if widget and hasattr(widget, 'image_id'):
             try:
-                # Get original image from thumbnails table
                 image_data = self.db_manager.get_image_data(widget.image_id)
-                if image_data:
-                    image = Image.open(io.BytesIO(image_data)).convert('RGB')
-                    qimage = QImage(image.tobytes('raw', 'RGB'),
-                                  image.width, image.height,
-                                  3 * image.width,
-                                  QImage.Format.Format_RGB888)
-                    pixmap = QPixmap.fromImage(qimage)
+                pixmap = ImageProcessor.create_pixmap_from_data(image_data)
+                if pixmap:
                     self.preview_window.show_image(pixmap, pos)
             except Exception as e:
                 logging.error(f"Error showing full image: {e}")
