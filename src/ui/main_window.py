@@ -6,14 +6,15 @@ from .vggface_training_widget import VGGFaceTrainingWidget
 from .prediction_widget import PredictionWidget
 from .prediction_review_widget import PredictionReviewWidget
 from .database_analysis_widget import DatabaseAnalysisWidget
-from .thumbnail_viewer import ThumbnailViewer  # Add this import
+from .thumbnail_viewer import ThumbnailViewer
+from .name_analysis_widget import NameAnalysisWidget  # Add import
 import logging
 
 class MainWindow(QMainWindow):
     def __init__(self, db_manager):
         super().__init__()
         self.db_manager = db_manager
-        self.previous_tab_index = -1  # Initialize before setup_ui
+        self.previous_tab_index = -1
         self.setup_ui()
 
     def setup_ui(self):
@@ -24,14 +25,15 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        self.tabs = QTabWidget()  # Make tabs a class member
+        self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(self.on_tab_changed)
         
-        # Add tabs (without VGGFace Training)
+        # Add tabs
         self.tabs.addTab(FaceDetectionWidget(self.db_manager), "Detection")
-        self.tabs.addTab(ThumbnailViewer(self.db_manager), "Thumbnails")  # Add this line
+        self.tabs.addTab(ThumbnailViewer(self.db_manager), "Thumbnails")
         self.tabs.addTab(ClusteringWidget(self.db_manager), "Clustering")
         self.tabs.addTab(NamingWidget(self.db_manager), "Naming")
+        self.tabs.addTab(NameAnalysisWidget(self.db_manager), "Name Analysis")  # Add new tab
         self.tabs.addTab(VGGFaceTrainingWidget(self.db_manager), "VGGFace Training")
         self.tabs.addTab(PredictionWidget(self.db_manager), "Prediction")
         self.tabs.addTab(PredictionReviewWidget(self.db_manager), "Review Predictions")
