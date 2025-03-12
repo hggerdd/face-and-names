@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QApplication
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QPixmap
 from .image_utils import ImageProcessor
+from .font_config import FontConfig
 import logging
 
 class ImagePreviewWindow(QFrame):
@@ -28,14 +29,21 @@ class ImagePreviewWindow(QFrame):
         layout.setContentsMargins(5, 5, 5, 5)
         
         self.image_label = QLabel()
+        self.image_label.setFont(FontConfig.get_default_font())
         layout.addWidget(self.image_label)
+        
+        self.info_label = QLabel()
+        self.info_label.setFont(FontConfig.get_label_font())
+        self.info_label.setStyleSheet("color: white;")
+        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.info_label)
         
         self.setMaximumSize(800, 600)
 
         self.close_timer = QTimer(self)
         self.close_timer.setSingleShot(True)
         self.close_timer.timeout.connect(self.hide_and_clear)
-    
+        
     def show_image(self, pixmap, pos):
         """Show preview with scaled image."""
         self.close_timer.stop()
@@ -48,6 +56,16 @@ class ImagePreviewWindow(QFrame):
         )
         
         self.image_label.setPixmap(scaled_pixmap)
+        
+        # Update info label with image dimensions
+        if scaled_pixmap:
+            original_size = pixmap.size()
+            scaled_size = scaled_pixmap.size()
+            self.info_label.setText(
+                f"Original: {original_size.width()}x{original_size.height()} "
+                f"Scaled: {scaled_size.width()}x{scaled_size.height()}"
+            )
+        
         self.adjustSize()
 
         # Position the preview window
@@ -64,9 +82,11 @@ class ImagePreviewWindow(QFrame):
         """Hide window and clear image."""
         self.hide()
         self.image_label.clear()
-        
+        self.info_label.clear()
+
     def closeEvent(self, event):
         """Handle window close event."""
         self.close_timer.stop()
         self.image_label.clear()
+        self.info_label.clear()
         super().closeEvent(event)

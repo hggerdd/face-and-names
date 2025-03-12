@@ -1,12 +1,13 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizePolicy
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QFont, QPainter, QPen, QColor, QPixmap, QImage
+from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QImage
 from PIL import Image, ImageOps, ImageEnhance
 import io
 import sqlite3
 import logging
 from .image_utils import ImageProcessor
 from .image_preview import ImagePreviewWindow
+from .font_config import FontConfig
 
 class FaceImageWidget(QWidget):
     """A widget that displays a face image with current and predicted names."""
@@ -33,13 +34,6 @@ class FaceImageWidget(QWidget):
         self.preview_window = None  # Only create when needed for right-click preview
         self.setup_ui()
 
-    @classmethod
-    def close_all_previews(cls):
-        """Close any open preview window"""
-        if cls._shared_preview_window and cls._shared_preview_window.isVisible():
-            cls._shared_preview_window.hide_and_clear()
-            cls._current_preview = None
-
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(2)
@@ -55,15 +49,10 @@ class FaceImageWidget(QWidget):
         # Create and setup main image label
         self.image_label = self._create_image_label()
         image_layout.addWidget(self.image_label)
-
-        # Add overlaid info label (face ID)
-        info_label = self._create_info_label()
-        image_layout.addWidget(info_label)
-        image_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
         
         layout.addWidget(self.image_container, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        # Add fixed-width container for name labels
+        # Add fixed-width container for name labels with fixed maximum height
         labels_container = QWidget(self)
         labels_container.setFixedWidth(self.face_size)
         labels_layout = QVBoxLayout(labels_container)
@@ -72,23 +61,44 @@ class FaceImageWidget(QWidget):
 
         # Add name label if provided
         if self.name:
-            name_label = QLabel(f"Name: {self.name}", self)
+            name_label = QLabel(self.name, self)
+            name_label.setFixedHeight(20)  # Fixed height for consistency
+            name_label.setFont(FontConfig.get_label_font())
             name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             name_label.setWordWrap(True)
-            name_label.setStyleSheet("QLabel { background-color: rgba(220, 220, 220, 128); }")
+            name_label.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(220, 220, 220, 128);
+                    border-radius: 2px;
+                    padding: 1px 3px;
+                    margin: 0px;
+                }
+            """)
             labels_layout.addWidget(name_label)
 
         # Add predicted name if provided
         if self.predicted_name:
             confidence = getattr(self, 'prediction_confidence', None)
             conf_text = f" ({confidence:.0%})" if confidence else ""
-            pred_label = QLabel(f"Predicted: {self.predicted_name}{conf_text}", self)
+            pred_label = QLabel(f"{self.predicted_name}{conf_text}", self)
+            pred_label.setFixedHeight(20)  # Fixed height for consistency
+            pred_label.setFont(FontConfig.get_label_font())
             pred_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             pred_label.setWordWrap(True)
-            pred_label.setStyleSheet("QLabel { background-color: rgba(200, 200, 255, 128); }")
+            pred_label.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(200, 200, 255, 128);
+                    border-radius: 2px;
+                    padding: 1px 3px;
+                    margin: 0px;
+                }
+            """)
             labels_layout.addWidget(pred_label)
 
         layout.addWidget(labels_container, alignment=Qt.AlignmentFlag.AlignHCenter)
+        
+        # Set widget's size policy to prevent unwanted stretching
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def _create_image_label(self) -> QLabel:
         """Create the image label with face thumbnail."""
@@ -132,9 +142,10 @@ class FaceImageWidget(QWidget):
         return label
 
     def _create_info_label(self) -> QLabel:
+        """Create the face ID info label."""
         info_label = QLabel(f"ID: {self.face_id}", self)
         info_label.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter)
-        info_label.setFont(QFont("Arial", 7))
+        info_label.setFont(FontConfig.get_label_font())
         info_label.setStyleSheet("background-color: rgba(255, 255, 255, 128);")
         return info_label
 
@@ -149,6 +160,13 @@ class FaceImageWidget(QWidget):
             FaceImageWidget._current_preview = self
         elif event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.face_id)
+
+    @classmethod
+    def close_all_previews(cls):
+        """Close any open preview window"""
+        if cls._shared_preview_window and cls._shared_preview_window.isVisible():
+            cls._shared_preview_window.hide_and_clear()
+            cls._current_preview = None
 
     def show_preview(self, global_pos):
         """Show preview with highlighted face box."""
@@ -180,13 +198,11 @@ class FaceImageWidget(QWidget):
                         
                         if result:
                             rel_x, rel_y, rel_w, rel_h = result
-                            # Convert relative coordinates to actual pixels
                             x = int(rel_x * drawing_pixmap.width())
                             y = int(rel_y * drawing_pixmap.height())
                             w = int(rel_w * drawing_pixmap.width())
                             h = int(rel_h * drawing_pixmap.height())
                             
-                            # Draw rectangle
                             painter = QPainter(drawing_pixmap)
                             pen = QPen(QColor(255, 0, 0))  # Red color
                             pen.setWidth(3)  # Make it thicker for visibility

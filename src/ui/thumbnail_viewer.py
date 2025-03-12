@@ -1,33 +1,34 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                            QLabel, QScrollArea, QTableWidget, QTableWidgetItem, 
                            QSplitter, QMenu, QInputDialog, QRubberBand, QMessageBox,
-                           QStyle)  # Add QStyle to imports
-from PyQt6.QtCore import Qt, QRect, QPoint, QSize  # Add QSize here
+                           QStyle)
+from PyQt6.QtCore import Qt, QRect, QPoint, QSize
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor
-from pathlib import Path  # Add this import
+from pathlib import Path
 import logging
 import io
 import sqlite3
 from .components.image_tree import ImageTreeWidget
+from .shared.font_config import FontConfig
 
 class ThumbnailViewer(QWidget):
     def __init__(self, db_manager, parent=None):
         super().__init__(parent)
         self.db_manager = db_manager
-        self.current_folder = None  # Track current selected folder
-        self.current_image_id = None  # Initialize current_image_id
-        self.current_images = []  # Store images for current folder
-        self.current_index = -1  # Current image index in folder
-        self.selected_images = []  # Store list of image IDs for current selection
-        self.current_image_path = None  # Add this to track current image path
-        self.face_boxes = []  # Store current face boxes and their info
+        self.current_folder = None
+        self.current_image_id = None
+        self.current_images = []
+        self.current_index = -1
+        self.selected_images = []
+        self.current_image_path = None
+        self.face_boxes = []
         self.rubber_band = None
         self.drawing = False
         self.origin = None
         self.current_pixmap = None
         self.pixmap_rect = None
         self.setup_ui()
-        
+
     def setup_ui(self):
         layout = QHBoxLayout(self)
         
@@ -35,7 +36,7 @@ class ThumbnailViewer(QWidget):
         self.image_tree = ImageTreeWidget()
         self.image_tree.setMinimumWidth(250)
         self.image_tree.folderSelected.connect(self.on_folder_selected)
-        self.image_tree.imageSelected.connect(self.on_image_selected)  # Connect new image selection signal
+        self.image_tree.imageSelected.connect(self.on_image_selected)
         layout.addWidget(self.image_tree)
         
         # Add splitter between tree and content
@@ -46,12 +47,13 @@ class ThumbnailViewer(QWidget):
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         
-        # Add help text at the top
+        # Add help text at the top with standardized font
         help_label = QLabel(
             "Usage:\n"
             "• Right-click a face to edit name or delete\n"
             "• Left-click and drag to draw a new face box"
         )
+        help_label.setFont(FontConfig.get_default_font())
         help_label.setStyleSheet("""
             QLabel {
                 background-color: #f0f0f0;
@@ -62,21 +64,24 @@ class ThumbnailViewer(QWidget):
         """)
         right_layout.addWidget(help_label)
 
-        # Navigation buttons
+        # Navigation buttons with standardized font
         nav_layout = QHBoxLayout()
         
         self.prev_button = QPushButton("Previous")
+        self.prev_button.setFont(FontConfig.get_default_font())
         self.prev_button.clicked.connect(self.show_previous)
         nav_layout.addWidget(self.prev_button)
         
         self.next_button = QPushButton("Next")
+        self.next_button.setFont(FontConfig.get_default_font())
         self.next_button.clicked.connect(self.show_next)
         nav_layout.addWidget(self.next_button)
         
         right_layout.addLayout(nav_layout)
         
-        # Image info
+        # Image info with standardized font
         self.info_label = QLabel()
+        self.info_label.setFont(FontConfig.get_default_font())
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right_layout.addWidget(self.info_label)
         
@@ -94,10 +99,12 @@ class ThumbnailViewer(QWidget):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll_area.setWidget(self.image_label)
         
-        # Right side: Metadata table
+        # Right side: Metadata table with standardized font
         self.metadata_table = QTableWidget()
+        self.metadata_table.setFont(FontConfig.get_label_font())
         self.metadata_table.setColumnCount(2)
         self.metadata_table.setHorizontalHeaderLabels(["Key", "Value"])
+        self.metadata_table.horizontalHeader().setFont(FontConfig.get_default_font())
         self.metadata_table.horizontalHeader().setStretchLastSection(True)
         
         # Add widgets to inner splitter
@@ -110,7 +117,7 @@ class ThumbnailViewer(QWidget):
         right_layout.addWidget(inner_splitter)
         
         # Set stretch factor for the splitter
-        right_layout.setStretchFactor(inner_splitter, 1)  # Use all available vertical space
+        right_layout.setStretchFactor(inner_splitter, 1)
         
         splitter.addWidget(self.image_tree)
         splitter.addWidget(right_panel)
@@ -118,20 +125,19 @@ class ThumbnailViewer(QWidget):
         
         # Initial tree population
         self.populate_image_tree()
-        
+
     def populate_image_tree(self):
         """Load image structure into tree."""
-        images = self.db_manager.get_image_structure()  # New method needed
+        images = self.db_manager.get_image_structure()
         self.image_tree.populate_tree(images)
-        
+
     def on_folder_selected(self, folder_path: Path):
         """Handle folder selection in tree."""
         try:
-            self.current_folder = folder_path  # Store current folder
+            self.current_folder = folder_path
             images = self.db_manager.get_images_in_folder(folder_path)
             if images:
                 self.selected_images = [img_id for img_id, _ in images]
-                # Don't automatically show first image when folder is selected
                 self.prev_button.setEnabled(len(self.selected_images) > 1)
                 self.next_button.setEnabled(len(self.selected_images) > 1)
             else:
@@ -143,16 +149,13 @@ class ThumbnailViewer(QWidget):
     def on_image_selected(self, image_path: Path):
         """Handle direct image selection from tree."""
         try:
-            # Find image in database
             base_folder = str(image_path.parent.parent)
             sub_folder = image_path.parent.name
             filename = image_path.name
             
-            # First, load all images from this folder if not already loaded
             if self.current_folder != image_path.parent:
                 self.on_folder_selected(image_path.parent)
             
-            # Get image_id for selected file
             conn = sqlite3.connect(self.db_manager.db_path)
             cursor = conn.cursor()
             cursor.execute('''
@@ -163,7 +166,6 @@ class ThumbnailViewer(QWidget):
             
             if result:
                 image_id = result[0]
-                # Update current selection
                 if image_id in self.selected_images:
                     self.current_index = self.selected_images.index(image_id)
                     self.current_image_id = image_id
@@ -188,22 +190,20 @@ class ThumbnailViewer(QWidget):
         
     def load_images_for_folder(self, folder_path: Path):
         """Load images for selected folder."""
-        images = self.db_manager.get_images_in_folder(folder_path)  # New method needed
-        # Update navigation to only show images from this folder
+        images = self.db_manager.get_images_in_folder(folder_path)
         self.current_images = images
         self.current_index = 0
         self.show_current_image()
         
     def showEvent(self, event):
         super().showEvent(event)
-        # Load first image when tab is shown
         self.load_first_image()
         
     def load_first_image(self):
         """Load the first available image."""
         conn = None
         try:
-            conn = sqlite3.connect(self.db_manager.db_path)  # Fixed: use sqlite3.connect with db_path
+            conn = sqlite3.connect(self.db_manager.db_path)
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -222,7 +222,7 @@ class ThumbnailViewer(QWidget):
         except Exception as e:
             logging.error(f"Error loading first image: {e}")
         finally:
-            if conn:  # Only close if connection was established
+            if conn:
                 conn.close()
             
     def show_previous(self):
@@ -252,7 +252,6 @@ class ThumbnailViewer(QWidget):
             conn = sqlite3.connect(self.db_manager.db_path)
             cursor = conn.cursor()
             
-            # Modified query to include face.id
             cursor.execute('''
                 SELECT t.thumbnail, i.base_folder, i.sub_folder, i.filename,
                        f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h, f.name, f.predicted_name,
@@ -267,11 +266,9 @@ class ThumbnailViewer(QWidget):
             if not results:
                 return
 
-            # First row contains thumbnail and path info
             thumbnail_data = results[0][0]
             base_folder, sub_folder, filename = results[0][1:4]
             
-            # Get metadata for current image
             cursor.execute('''
                 SELECT meta_key, meta_type, meta_value
                 FROM image_metadata
@@ -281,10 +278,8 @@ class ThumbnailViewer(QWidget):
             
             metadata = cursor.fetchall()
             
-            # Update metadata table
             self.metadata_table.setRowCount(len(metadata))
             for row, (key, type_, value) in enumerate(metadata):
-                # Add type prefix to key
                 display_key = f"{type_}: {key}"
                 
                 key_item = QTableWidgetItem(display_key)
@@ -295,68 +290,56 @@ class ThumbnailViewer(QWidget):
             
             self.metadata_table.resizeColumnsToContents()
             
-            # Show image path info
             full_path = f"{base_folder}/{sub_folder}/{filename}"
-            face_count = sum(1 for r in results if r[4] is not None)  # Count rows with bbox data
+            face_count = sum(1 for r in results if r[4] is not None)
             self.info_label.setText(
                 f"Image ID: {self.current_image_id}\n"
                 f"Path: {full_path}\n"
                 f"Faces detected: {face_count}"
             )
             
-            # Create QImage from thumbnail data
             image = QImage.fromData(thumbnail_data)
             original_pixmap = QPixmap.fromImage(image)
             
-            # Store original dimensions
             self.original_width = original_pixmap.width()
             self.original_height = original_pixmap.height()
             
-            # Scale pixmap if needed
             available_width = self.image_label.width()
             if original_pixmap.width() > available_width:
                 pixmap = original_pixmap.scaledToWidth(available_width, Qt.TransformationMode.SmoothTransformation)
             else:
                 pixmap = original_pixmap
                 
-            # Store current display dimensions for coordinate conversion
             self.display_width = pixmap.width()
             self.display_height = pixmap.height()
 
-            # Clear previous face boxes
             self.face_boxes = []
             
-            # Draw boxes for each face
             painter = QPainter(pixmap)
             pen = QPen(QColor(255, 0, 0))
             pen.setWidth(2)
             painter.setPen(pen)
             
             for result in results:
-                if result[4] is not None:  # If bbox data exists
-                    # Get relative coordinates
+                if result[4] is not None:
                     rel_x, rel_y, rel_w, rel_h = result[4:8]
-                    face_id = result[10]  # Now correctly getting face_id
+                    face_id = result[10]
                     name = result[8] or result[9]
                     
-                    # Convert relative to display coordinates
                     x = int(rel_x * self.display_width)
                     y = int(rel_y * self.display_height)
                     w = int(rel_w * self.display_width)
                     h = int(rel_h * self.display_height)
                     
-                    # Store both relative and display coordinates
                     self.face_boxes.append({
                         'rect': (x, y, w, h),
                         'rel_coords': (rel_x, rel_y, rel_w, rel_h),
-                        'face_id': face_id,  # This should now have a valid ID
+                        'face_id': face_id,
                         'name': name
                     })
                     
-                    # Draw rectangle
                     painter.drawRect(x, y, w, h)
                     
-                    # Draw name if exists
                     if name:
                         painter.drawText(x, y - 5, name)
 
@@ -364,14 +347,12 @@ class ThumbnailViewer(QWidget):
             self.image_label.setPixmap(pixmap)
             self._update_tree_selection()
 
-            # Store the current pixmap and its display rect for coordinate conversion
             self.current_pixmap = pixmap
             label_size = self.image_label.size()
             x_offset = max(0, (label_size.width() - pixmap.width()) // 2)
             y_offset = max(0, (label_size.height() - pixmap.height()) // 2)
             self.pixmap_rect = QRect(x_offset, y_offset, pixmap.width(), pixmap.height())
 
-            # Enable mouse events for the image label
             self.image_label.mousePressEvent = self.handle_image_click
             self.image_label.mouseMoveEvent = self.handle_mouse_move
             self.image_label.mouseReleaseEvent = self.handle_mouse_release
@@ -385,7 +366,6 @@ class ThumbnailViewer(QWidget):
     def handle_image_click(self, event):
         """Handle mouse press events."""
         if event.button() == Qt.MouseButton.LeftButton:
-            # Start drawing rectangle
             if not self.rubber_band:
                 self.rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self.image_label)
             self.origin = event.pos()
@@ -397,31 +377,26 @@ class ThumbnailViewer(QWidget):
                 logging.debug("No face boxes available in current image")
                 return
 
-            # Get click position in image coordinates
             pos = event.pos()
             if not self.pixmap_rect:
                 return
 
-            # Convert click to relative coordinates
             image_x = pos.x() - self.pixmap_rect.x()
             image_y = pos.y() - self.pixmap_rect.y()
             rel_click_x = image_x / self.pixmap_rect.width()
             rel_click_y = image_y / self.pixmap_rect.height()
 
-            # Check if click is inside any face box
             for face in self.face_boxes:
                 rel_x, rel_y, rel_w, rel_h = face['rel_coords']
                 
                 if (rel_x <= rel_click_x <= rel_x + rel_w and 
                     rel_y <= rel_click_y <= rel_y + rel_h):
                     
-                    # Create context menu
                     menu = QMenu(self)
                     edit_action = menu.addAction("Edit Name")
                     delete_action = menu.addAction("Delete Face")
                     delete_action.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
                     
-                    # Show menu at cursor position using globalPosition() instead of globalPos()
                     action = menu.exec(event.globalPosition().toPoint())
                     
                     if action == edit_action:
@@ -455,7 +430,7 @@ class ThumbnailViewer(QWidget):
                 conn.commit()
                 
                 logging.info(f"Deleted face {face['face_id']}")
-                self.show_current_image()  # Refresh display
+                self.show_current_image()
                 
             except Exception as e:
                 logging.error(f"Error deleting face: {e}")
@@ -467,7 +442,6 @@ class ThumbnailViewer(QWidget):
         """Handle mouse move events for drawing rectangle."""
         if self.drawing and self.rubber_band:
             rect = QRect(self.origin, event.pos()).normalized()
-            # Constrain rectangle to image bounds
             if self.pixmap_rect:
                 rect = rect.intersected(self.pixmap_rect)
             self.rubber_band.setGeometry(rect)
@@ -477,10 +451,8 @@ class ThumbnailViewer(QWidget):
         if event.button() == Qt.MouseButton.LeftButton and self.drawing:
             self.drawing = False
             if self.rubber_band and self.rubber_band.isVisible():
-                # Get the final rectangle in label coordinates
                 rect = self.rubber_band.geometry()
-                
-                # Convert to relative coordinates
+
                 if self.pixmap_rect and not rect.isEmpty():
                     rel_rect = self.convert_to_relative_coords(rect)
                     if rel_rect:
@@ -493,13 +465,11 @@ class ThumbnailViewer(QWidget):
         if not self.pixmap_rect:
             return None
             
-        # Adjust coordinates relative to image position
         x = (rect.x() - self.pixmap_rect.x()) / self.pixmap_rect.width()
         y = (rect.y() - self.pixmap_rect.y()) / self.pixmap_rect.height()
         w = rect.width() / self.pixmap_rect.width()
         h = rect.height() / self.pixmap_rect.height()
         
-        # Ensure coordinates are within bounds
         if 0 <= x <= 1 and 0 <= y <= 1 and w > 0 and h > 0:
             return (x, y, w, h)
         return None
@@ -515,11 +485,9 @@ class ThumbnailViewer(QWidget):
         
         if ok and name:
             try:
-                # Create new face entry
                 conn = sqlite3.connect(self.db_manager.db_path)
                 cursor = conn.cursor()
                 
-                # Insert new face with relative coordinates
                 cursor.execute('''
                     INSERT INTO faces (image_id, name, bbox_x, bbox_y, bbox_w, bbox_h)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -528,7 +496,6 @@ class ThumbnailViewer(QWidget):
                 conn.commit()
                 logging.info(f"Added new face with name '{name}' at {rel_coords}")
                 
-                # Refresh the display
                 self.show_current_image()
                 
             except Exception as e:
@@ -560,7 +527,7 @@ class ThumbnailViewer(QWidget):
                     success = self.db_manager.update_face_name(face['face_id'], new_name)
                     if success:
                         logging.info(f"Successfully updated face {face['face_id']} name to: {new_name}")
-                        self.show_current_image()  # Refresh display
+                        self.show_current_image()
                     else:
                         logging.error(f"Database update failed for face {face['face_id']}")
                 except Exception as e:
@@ -596,6 +563,5 @@ class ThumbnailViewer(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Refresh current image to maintain proper scaling
         if self.current_image_id is not None:
             self.show_current_image()

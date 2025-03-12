@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from .ui.main_window import MainWindow
+from .ui.shared.font_config import FontConfig
 
 def setup_logging():
     # Create logs directory if it doesn't exist
@@ -30,6 +31,11 @@ def main():
     
     try:
         app = QApplication(sys.argv)
+        
+        # Initialize font configuration before creating any widgets
+        FontConfig.initialize()
+        logging.info("Font configuration initialized")
+        
         window = MainWindow()
         window.show()
         return app.exec()
