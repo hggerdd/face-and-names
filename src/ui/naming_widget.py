@@ -8,7 +8,6 @@ from pathlib import Path
 import io
 from PIL import Image, ImageOps, ImageEnhance
 from .shared.image_preview import ImagePreviewWindow
-from .shared.face_image_widget import FaceImageWidget
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -62,20 +61,57 @@ class FaceGridWidget(QWidget):
         main_layout.addWidget(self.selection_count_label)
 
     def create_face_widget(self, face_id, image_data, name, predicted_name, full_image_id):
-        """Create a widget to display a single face."""
-        face_widget = FaceImageWidget(
-            face_id=face_id,
-            image_data=image_data,
-            name=name,
-            predicted_name=predicted_name,
-            face_size=self.face_size,
-            active=self.face_states.get(face_id, True)
-        )
-        face_widget.clicked.connect(lambda: self.toggle_face_selection(face_id))
-        face_widget.rightClicked.connect(lambda _, pos: self.handle_right_click(face_id, pos, full_image_id))
-        
+        """Create a widget to display a single face.
+           Now also receive full_image_id to retrieve the full image on right click.
+        """
+        face_widget = QWidget()
+        face_layout = QVBoxLayout(face_widget)
+        face_layout.setSpacing(2)
+        face_layout.setContentsMargins(5, 5, 5, 5)
+
+        # Load and display thumbnail image as before
+        image = Image.open(io.BytesIO(image_data)).convert('RGB')
+        image = image.resize((self.face_size, self.face_size), Image.Resampling.LANCZOS)
+        if not self.face_states.get(face_id, True):
+            image = ImageOps.grayscale(image).convert('RGB')
+            enhancer = ImageEnhance.Brightness(image)
+            image = enhancer.enhance(1.5)
+        qimage = QImage(image.tobytes('raw', 'RGB'),
+                        self.face_size, self.face_size,
+                        self.face_size * 3,
+                        QImage.Format.Format_RGB888)
+        pixmap = QPixmap.fromImage(qimage)
+
+        image_label = ClickableLabel()
+        image_label.setPixmap(pixmap)
+        image_label.setFixedSize(self.face_size, self.face_size)
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        image_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        image_label.clicked.connect(lambda: self.toggle_face_selection(face_id))
+        # NEW: When right-clicked, fetch full image based on full_image_id
+        image_label.rightClicked.connect(lambda pos: self.handle_right_click(face_id, pos, full_image_id))
+        face_layout.addWidget(image_label)
+
+        # Add name label if provided
+        if name:
+            name_label = QLabel(f"Current: {name}")
+            name_label.setFixedHeight(20)
+            name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            face_layout.addWidget(name_label)
+
+        # Add image ID and predicted name (if exists) at the bottom inside the picture
+        info_label = QLabel(f"ID: {face_id}")
+        if predicted_name:
+            info_label.setText(f"ID: {face_id}\nPredicted: {predicted_name}")
+        info_label.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter)
+        info_label.setFont(QFont("Arial", 7))
+        info_label.setStyleSheet("background-color: rgba(255, 255, 255, 128);")  # Semi-transparent background
+        image_label_layout = QVBoxLayout(image_label)
+        image_label_layout.addWidget(info_label)
+        image_label_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
+
         # Store full_image_id in the widget for later reuse
-        face_widget.full_image_id = full_image_id
+        face_widget.image_id = full_image_id  
         return face_widget
 
     def handle_right_click(self, face_id, global_pos: QPoint, full_image_id):
@@ -104,10 +140,14 @@ class FaceGridWidget(QWidget):
         self.update_selection_count()
 
     def update_faces(self):
-        """Update face display states"""
-        for face_widget in self.findChildren(FaceImageWidget):
-            face_id = face_widget.face_id
-            face_widget.set_active(self.face_states.get(face_id, True))
+        # Modified to unpack 5 values from each face tuple
+        for idx, face_data in enumerate(self.current_faces):
+            row = idx // self.grid_layout.columnCount()
+            col = idx % self.grid_layout.columnCount()
+            # Unpack: face_id, thumbnail, name, predicted_name, full_image_id
+            face_id, image_data, name, predicted_name, full_image_id = face_data
+            face_widget = self.create_face_widget(face_id, image_data, name, predicted_name, full_image_id)
+            self.grid_layout.addWidget(face_widget, row, col)
 
     def update_selection_count(self):
         selected_count = len(self.get_selected_faces())

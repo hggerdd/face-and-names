@@ -924,3 +924,51 @@ class DatabaseManager:
             
         finally:
             conn.close()
+
+    def get_faces_by_name(self, name: str) -> List[Tuple[int, bytes]]:
+        """Get all faces for a given name."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, face_image
+                FROM faces 
+                WHERE name = ? AND face_image IS NOT NULL
+                ORDER BY id
+            ''', (name,))
+            
+            faces = cursor.fetchall()
+            logging.info(f"Found {len(faces)} faces for name '{name}'")
+            return faces
+            
+        except Exception as e:
+            logging.error(f"Error getting faces by name: {e}")
+            return []
+        finally:
+            conn.close()
+
+    def update_person_name(self, old_name: str, new_name: str) -> bool:
+        """Update all faces with a specific name to have a new name."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Update faces with exact name match
+            cursor.execute('''
+                UPDATE faces 
+                SET name = ?
+                WHERE name = ?
+            ''', (new_name, old_name))
+            
+            updated_count = cursor.rowcount
+            conn.commit()
+            
+            logging.info(f"Updated {updated_count} faces from '{old_name}' to '{new_name}'")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error updating person name: {e}")
+            return False
+        finally:
+            conn.close()
