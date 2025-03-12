@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap, QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QFont
 from PIL import Image, ImageOps, ImageEnhance
 import io
+from .image_utils import ImageProcessor
 
 class FaceImageWidget(QWidget):
     """A widget that displays a face image with current and predicted names."""
@@ -74,25 +75,26 @@ class FaceImageWidget(QWidget):
         layout.addWidget(labels_container, alignment=Qt.AlignmentFlag.AlignHCenter)
 
     def _create_image_label(self) -> QLabel:
-        # Process image
-        image = Image.open(io.BytesIO(self.image_data)).convert('RGB')
-        image = image.resize((self.face_size, self.face_size), Image.Resampling.LANCZOS)
+        """Create the image label with face thumbnail."""
+        label = QLabel()
+        pixmap = ImageProcessor.create_pixmap_from_data(
+            self.image_data,
+            QSize(self.face_size, self.face_size)
+        )
         
-        if not self.active:
-            image = ImageOps.grayscale(image).convert('RGB')
+        if pixmap and not self.active:
+            # Convert to grayscale and enhance brightness for inactive state
+            image = ImageOps.grayscale(Image.open(io.BytesIO(self.image_data))).convert('RGB')
             enhancer = ImageEnhance.Brightness(image)
             image = enhancer.enhance(1.5)
+            pixmap = ImageProcessor.create_pixmap_from_data(
+                io.BytesIO(image.tobytes()).getvalue(),
+                QSize(self.face_size, self.face_size)
+            )
             
-        # Convert to QImage/QPixmap
-        qimage = QImage(image.tobytes('raw', 'RGB'),
-                       self.face_size, self.face_size,
-                       self.face_size * 3,
-                       QImage.Format.Format_RGB888)
-        pixmap = QPixmap.fromImage(qimage)
-
-        # Create and setup label
-        label = QLabel()
-        label.setPixmap(pixmap)
+        if pixmap:
+            label.setPixmap(pixmap)
+            
         label.setFixedSize(self.face_size, self.face_size)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setCursor(Qt.CursorShape.PointingHandCursor)

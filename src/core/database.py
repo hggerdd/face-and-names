@@ -925,14 +925,14 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    def get_faces_by_name(self, name: str) -> List[Tuple[int, bytes]]:
-        """Get all faces for a given name."""
+    def get_faces_by_name(self, name: str) -> List[Tuple[int, bytes, int]]:
+        """Get all faces for a given name, returning (face_id, face_image, image_id)."""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT id, face_image
+                SELECT id, face_image, image_id
                 FROM faces 
                 WHERE name = ? AND face_image IS NOT NULL
                 ORDER BY id

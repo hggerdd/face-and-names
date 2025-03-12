@@ -1,18 +1,20 @@
 from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap, QIcon, QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QFont
+from ..shared.image_utils import ImageProcessor
 
 class FaceImageWidget(QWidget):
     deleteClicked = pyqtSignal(int)  # Signal emitted when delete button clicked
     clicked = pyqtSignal()  # For regular image click
     rightClicked = pyqtSignal(object)  # For right-click preview
 
-    def __init__(self, face_id, pixmap, actual_name="Unknown", predicted_name=None, confidence=None, parent=None):
+    def __init__(self, face_id, image_data, actual_name="Unknown", predicted_name=None, confidence=None, parent=None):
         super().__init__(parent)
         self.face_id = face_id
-        self.setup_ui(pixmap, actual_name, predicted_name, confidence)
+        self.image_data = image_data
+        self.setup_ui(actual_name, predicted_name, confidence)
 
-    def setup_ui(self, pixmap, actual_name, predicted_name, confidence):
+    def setup_ui(self, actual_name, predicted_name, confidence):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
@@ -24,7 +26,14 @@ class FaceImageWidget(QWidget):
         # Image label with its container
         self.image_label = QLabel(self.container)
         self.image_label.setFixedSize(100, 100)
-        self.image_label.setPixmap(pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio))
+        
+        # Convert image data to pixmap using ImageProcessor
+        pixmap = ImageProcessor.create_pixmap_from_data(
+            self.image_data,
+            QSize(100, 100)
+        )
+        if pixmap:
+            self.image_label.setPixmap(pixmap)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Delete button
