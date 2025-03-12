@@ -1,36 +1,21 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QScrollArea, QGridLayout, QGroupBox, QSizePolicy, QListWidget, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
+    QLineEdit, QScrollArea, QGridLayout, QGroupBox, QSizePolicy, 
+    QListWidget, QMessageBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint
-from PyQt6.QtGui import QPixmap, QImage, QFont
-import logging
-from pathlib import Path
-import io
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont, QPixmap, QImage
 from PIL import Image, ImageOps, ImageEnhance
+import io
+import logging
+from .shared.face_image_widget import FaceImageWidget
 from .shared.image_preview import ImagePreviewWindow
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Modify ClickableLabel to support right click
-class ClickableLabel(QLabel):
-    """A QLabel that emits signals when clicked."""
-    clicked = pyqtSignal()
-    rightClicked = pyqtSignal(object)  # will send global position (QPoint)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
-            self.rightClicked.emit(event.globalPosition().toPoint())
-            return  # Do not propagate further for right clicks
-        elif event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
-        super().mousePressEvent(event)
-
 class FaceGridWidget(QWidget):
     """Widget to display a grid of faces from the same cluster."""
-    
-    # Static variable to track currently shown preview
-    _current_preview = None
 
     def __init__(self, db_manager=None, parent=None):
         super().__init__(parent)
@@ -40,156 +25,120 @@ class FaceGridWidget(QWidget):
         self.min_column_width = 130
         self.selection_count_label = QLabel("0 faces selected")
         self.selection_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setup_ui()
         self.db_manager = db_manager
-        self.preview_window = ImagePreviewWindow()
-        self.image_id = None
-        self.setMouseTracking(True)
+        self.resize_timer = None  # Will be initialized in setup_ui
+        self.setup_ui()
 
-    @classmethod
-    def close_all_previews(cls):
-        """Close any open preview window"""
-        if cls._current_preview and cls._current_preview.isVisible():
-            cls._current_preview.hide_and_clear()
-            cls._current_preview = None
+    def hideEvent(self, event):
+        """Close any open previews when widget is hidden."""
+        self.clear_layout()  # Clear layout when hidden
+        FaceImageWidget.close_all_previews()
+        super().hideEvent(event)
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
-        self.grid_layout = QGridLayout()
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create a widget to hold the grid
+        self.grid_container = QWidget(self)
+        self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setSpacing(10)
-        main_layout.addLayout(self.grid_layout)
+
+        main_layout.addWidget(self.grid_container)
         main_layout.addWidget(self.selection_count_label)
 
-    def create_face_widget(self, face_id, image_data, name, predicted_name, full_image_id):
-        """Create a widget to display a single face.
-           Now also receive full_image_id to retrieve the full image on right click.
-        """
-        face_widget = QWidget()
-        face_layout = QVBoxLayout(face_widget)
-        face_layout.setSpacing(2)
-        face_layout.setContentsMargins(5, 5, 5, 5)
-
-        # Load and display thumbnail image as before
-        image = Image.open(io.BytesIO(image_data)).convert('RGB')
-        image = image.resize((self.face_size, self.face_size), Image.Resampling.LANCZOS)
-        if not self.face_states.get(face_id, True):
-            image = ImageOps.grayscale(image).convert('RGB')
-            enhancer = ImageEnhance.Brightness(image)
-            image = enhancer.enhance(1.5)
-        qimage = QImage(image.tobytes('raw', 'RGB'),
-                        self.face_size, self.face_size,
-                        self.face_size * 3,
-                        QImage.Format.Format_RGB888)
-        pixmap = QPixmap.fromImage(qimage)
-
-        image_label = ClickableLabel()
-        image_label.setPixmap(pixmap)
-        image_label.setFixedSize(self.face_size, self.face_size)
-        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        image_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        image_label.clicked.connect(lambda: self.toggle_face_selection(face_id))
-        # NEW: When right-clicked, fetch full image based on full_image_id
-        image_label.rightClicked.connect(lambda pos: self.handle_right_click(face_id, pos, full_image_id))
-        face_layout.addWidget(image_label)
-
-        # Add name label if provided
-        if name:
-            name_label = QLabel(f"Current: {name}")
-            name_label.setFixedHeight(20)
-            name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            face_layout.addWidget(name_label)
-
-        # Add image ID and predicted name (if exists) at the bottom inside the picture
-        info_label = QLabel(f"ID: {face_id}")
-        if predicted_name:
-            info_label.setText(f"ID: {face_id}\nPredicted: {predicted_name}")
-        info_label.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter)
-        info_label.setFont(QFont("Arial", 7))
-        info_label.setStyleSheet("background-color: rgba(255, 255, 255, 128);")  # Semi-transparent background
-        image_label_layout = QVBoxLayout(image_label)
-        image_label_layout.addWidget(info_label)
-        image_label_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
-
-        # Store full_image_id in the widget for later reuse
-        face_widget.image_id = full_image_id  
-        return face_widget
-
-    def handle_right_click(self, face_id, global_pos: QPoint, full_image_id):
-        """Retrieve full image from database using full_image_id and show preview."""
-        try:
-            full_image_data = self.db_manager.get_image_data(full_image_id)
-            if full_image_data:
-                # Use shared preview window to display full image
-                image = Image.open(io.BytesIO(full_image_data)).convert('RGB')
-                qimage = QImage(image.tobytes('raw', 'RGB'),
-                                image.width, image.height,
-                                3 * image.width,
-                                QImage.Format.Format_RGB888)
-                pixmap = QPixmap.fromImage(qimage)
-                self.preview_window.show_image(pixmap, global_pos)
-                FaceGridWidget._current_preview = self.preview_window
-                logging.debug(f"Preview shown for face {face_id} using image_id {full_image_id}")
-            else:
-                logging.warning(f"No full image found for image_id {full_image_id}")
-        except Exception as e:
-            logging.error(f"Error showing preview for face {face_id}: {e}")
-
-    def toggle_face_selection(self, face_id):
-        self.face_states[face_id] = not self.face_states.get(face_id, True)
-        self.update_faces()
-        self.update_selection_count()
-
-    def update_faces(self):
-        # Modified to unpack 5 values from each face tuple
-        for idx, face_data in enumerate(self.current_faces):
-            row = idx // self.grid_layout.columnCount()
-            col = idx % self.grid_layout.columnCount()
-            # Unpack: face_id, thumbnail, name, predicted_name, full_image_id
-            face_id, image_data, name, predicted_name, full_image_id = face_data
-            face_widget = self.create_face_widget(face_id, image_data, name, predicted_name, full_image_id)
-            self.grid_layout.addWidget(face_widget, row, col)
+        # Setup resize timer to prevent multiple rapid updates
+        self.resize_timer = QTimer(self)
+        self.resize_timer.setSingleShot(True)
+        self.resize_timer.timeout.connect(self._delayed_resize)
 
     def update_selection_count(self):
+        """Update the selection count label."""
         selected_count = len(self.get_selected_faces())
         total_count = len(self.current_faces)
         self.selection_count_label.setText(f"{selected_count} of {total_count} faces selected")
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.current_faces:
-            width = event.size().width()
-            columns = max(1, width // self.min_column_width)
-            self.arrange_faces(columns)
+    def create_face_widget(self, face_id, image_data, name, predicted_name, full_image_id):
+        """Create a widget to display a single face."""
+        try:
+            face_widget = FaceImageWidget(
+                face_id=face_id,
+                image_data=image_data,
+                name=name,
+                predicted_name=predicted_name,
+                face_size=self.face_size,
+                active=self.face_states.get(face_id, True),
+                db_manager=self.db_manager,
+                parent=self  # Ensure parent is set
+            )
+            face_widget.image_id = full_image_id
+            face_widget.clicked.connect(lambda: self.toggle_face_selection(face_id))
+            return face_widget
+        except Exception as e:
+            logging.error(f"Error creating face widget: {e}")
+            return None
 
-    def load_faces(self, faces, columns=None):
-        self.current_faces = faces
-        # Update to use first element (face_id) from each face tuple
-        self.face_states = {face[0]: True for face in faces}  
-
-        if columns is None:
-            width = self.size().width()
-            columns = max(1, width // self.min_column_width)
-
-        self.clear_layout()
-        self.arrange_faces(columns)
+    def toggle_face_selection(self, face_id):
+        self.face_states[face_id] = not self.face_states.get(face_id, True)
+        self._update_widget_states()
         self.update_selection_count()
 
-    def clear_layout(self):
-        for i in reversed(range(self.grid_layout.count())): 
+    def _update_widget_states(self):
+        """Update only the active states of existing widgets without recreating them."""
+        for i in range(self.grid_layout.count()):
             widget = self.grid_layout.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
+            if isinstance(widget, FaceImageWidget):
+                widget.set_active(self.face_states.get(widget.face_id, True))
 
-    def arrange_faces(self, columns):
+    def update_faces(self, force=False):
+        """Update the grid layout with current faces."""
         if not self.current_faces:
             return
 
-        for idx, face_data in enumerate(self.current_faces):
-            row = idx // columns
-            col = idx % columns
-            face_id, image_data, name, predicted_name, full_image_id = face_data
-            face_widget = self.create_face_widget(face_id, image_data, name, predicted_name, full_image_id)
-            self.grid_layout.addWidget(face_widget, row, col)
+        # Calculate columns based on container width
+        width = self.grid_container.width()
+        columns = max(1, width // self.min_column_width)
+        
+        # Only recreate widgets if force=True or column count changed
+        current_columns = self.grid_layout.columnCount()
+        if force or columns != current_columns:
+            self.clear_layout()
+            
+            for idx, face_data in enumerate(self.current_faces):
+                row = idx // columns
+                col = idx % columns
+                face_id, image_data, name, predicted_name, full_image_id = face_data
+                face_widget = self.create_face_widget(face_id, image_data, name, predicted_name, full_image_id)
+                if face_widget:
+                    self.grid_layout.addWidget(face_widget, row, col)
+        else:
+            # Just update widget states if layout hasn't changed
+            self._update_widget_states()
+
+    def _delayed_resize(self):
+        """Handle resize after a delay to prevent rapid updates."""
+        if self.current_faces:
+            self.update_faces(force=False)
+
+    def resizeEvent(self, event):
+        """Handle resize events with debouncing."""
+        super().resizeEvent(event)
+        if self.resize_timer:
+            self.resize_timer.start(100)  # 100ms delay
+
+    def load_faces(self, faces):
+        """Load new faces into the grid."""
+        self.current_faces = faces
+        self.face_states = {face[0]: True for face in faces}
+        self.update_faces(force=True)
+        self.update_selection_count()
+
+    def clear_layout(self):
+        while self.grid_layout.count():
+            child = self.grid_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
 
     def get_selected_faces(self):
         return [face_id for face_id, selected in self.face_states.items() if selected]
@@ -205,40 +154,6 @@ class FaceGridWidget(QWidget):
             self.face_states[face_id] = False
         self.update_faces()
         self.update_selection_count()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
-            self.close_all_previews()
-            self.show_preview(event.globalPosition().toPoint())
-            FaceGridWidget._current_preview = self.preview_window
-        super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
-            if self.preview_window.isVisible():
-                self.preview_window.hide_and_clear()
-                if FaceGridWidget._current_preview == self.preview_window:
-                    FaceGridWidget._current_preview = None
-        super().mouseReleaseEvent(event)
-
-    def show_preview(self, global_pos):
-        """Show preview at the specified position"""
-        try:
-            if self.db_manager and self.image_id:
-                logging.debug(f"Showing preview for face ID {self.face_id}")
-                full_image_data = self.db_manager.get_image_data(self.image_id)
-                if full_image_data:
-                    image = Image.open(io.BytesIO(full_image_data)).convert('RGB')
-                    qimage = QImage(image.tobytes('raw', 'RGB'), 
-                                  image.width, image.height,
-                                  3 * image.width,
-                                  QImage.Format.Format_RGB888)
-                    pixmap = QPixmap.fromImage(qimage)
-                    self.preview_window.show_image(pixmap, global_pos)
-                else:
-                    logging.warning(f"No image data found for image_id {self.image_id}")
-        except Exception as e:
-            logging.error(f"Error showing preview: {e}")
 
 class NamingWidget(QWidget):
     """Widget for naming clustered faces."""
@@ -317,10 +232,11 @@ class NamingWidget(QWidget):
         faces_group = QGroupBox("Faces in Cluster")
         faces_layout = QVBoxLayout(faces_group)
         faces_layout.setSpacing(0)
+        faces_layout.setContentsMargins(0, 0, 0, 0)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         # Pass self.db_manager (not self) to FaceGridWidget:
@@ -333,7 +249,7 @@ class NamingWidget(QWidget):
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding
         )
-        main_layout.addWidget(faces_group)
+        main_layout.addWidget(faces_group, stretch=1)
 
         # Add cluster position indicator above the status label
         self.cluster_indicator = QLabel("No clusters loaded")
@@ -378,7 +294,7 @@ class NamingWidget(QWidget):
         self.status_label.setText("Ready")
 
     def load_clusters(self):
-        """Load clusters and start with lowest available cluster number."""
+        """Load clusters (such as face groups from db_manager) and start with lowest cluster number."""
         try:
             self.clusters = self.db_manager.get_face_clusters()
             if not self.clusters:
@@ -422,7 +338,7 @@ class NamingWidget(QWidget):
         )
 
         # Update status with face count
-        self.status_label.setText(f"Found {len(faces)} faces in current cluster")
+        self.status_label.setText(f"Found {len(faces)} faces in cluster")
 
     def show_previous_cluster(self):
         """Show cluster with next lower number, wrap to highest if at lowest."""
@@ -473,7 +389,7 @@ class NamingWidget(QWidget):
 
         face_ids = self.face_grid.get_selected_faces()
         if not face_ids:
-            self.status_label.setText("No faces selected. Please select faces.")
+            self.status_label.setText("No faces selected.  Select faces first.")
             return False
 
         try:
@@ -500,31 +416,29 @@ class NamingWidget(QWidget):
                     self.update_controls(False)
                     return True
 
-                # Get sorted cluster IDs
-                available_clusters = sorted(self.clusters.keys())
+            logging.info(f"Saved name: {name} - {len(face_ids)} faces selected.")
 
-                if current_cluster_id in self.clusters and self.clusters[current_cluster_id]:
-                    # Stay on current cluster if it still has faces
-                    self.current_cluster = current_cluster_id
-                else:
-                    # Find next higher cluster number
-                    higher_clusters = [cid for cid in available_clusters if cid > current_cluster_id]
-                    if higher_clusters:
-                        self.current_cluster = higher_clusters[0]
-                    else:
-                        # Wrap to highest existing cluster
-                        self.current_cluster = max(available_clusters)
+            # Get sorted cluster IDs
+            available_clusters = sorted(self.clusters.keys())
 
-                self.show_current_cluster()
-                logging.info(f"After saving: Current cluster {self.current_cluster}, Available clusters: {available_clusters}")
-                return True
+            if current_cluster_id in self.clusters and self.clusters[current_cluster_id]:
+                # Stay on current cluster if it still has faces
+                self.current_cluster = current_cluster_id
             else:
-                self.status_label.setText("Failed to save names")
-                return False
+                # Find next higher cluster number
+                higher_clusters = [cid for cid in available_clusters if cid > current_cluster_id]
+                if higher_clusters:
+                    self.current_cluster = higher_clusters[0]
+                else:
+                    # Wrap to highest existing cluster
+                    self.current_cluster = max(available_clusters)
 
+            self.show_current_cluster()
+            logging.info(f"Current cluster: {self.current_cluster}, Available clusters: {available_clusters}")
+            return True
         except Exception as e:
-            logging.error(f"Error saving names: {e}")
-            self.status_label.setText(f"Error saving names: {str(e)}")
+            logging.error(f"Error saving name: {e}")
+            self.status_label.setText(f"Error saving name: {str(e)}")
             return False
 
     def select_all_faces(self):
