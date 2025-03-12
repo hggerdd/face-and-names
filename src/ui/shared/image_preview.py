@@ -9,12 +9,13 @@ class ImagePreviewWindow(QFrame):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(
-            Qt.WindowType.Popup |
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.WindowStaysOnTopHint
-        )
+        # Only set these flags if no parent is provided (for popup previews)
+        if parent is None:
+            self.setWindowFlags(
+                Qt.WindowType.Tool |
+                Qt.WindowType.FramelessWindowHint |
+                Qt.WindowType.WindowStaysOnTopHint
+            )
         self.setStyleSheet("""
             QFrame {
                 background-color: #2b2b2b;

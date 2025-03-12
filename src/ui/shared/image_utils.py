@@ -19,17 +19,26 @@ class ImageProcessor:
             QPixmap object or None if creation fails
         """
         try:
-            if not image_data:
+            if not isinstance(image_data, (bytes, bytearray)):
+                logging.error(f"Invalid image data type: {type(image_data)}")
                 return None
-                
-            image = Image.open(io.BytesIO(image_data)).convert('RGB')
+
+            # Ensure we have a fresh BytesIO object
+            image_bytes = io.BytesIO(image_data)
+            image = Image.open(image_bytes)
             
+            # Convert to RGB to ensure consistent format
+            if image.mode not in ('RGB', 'RGBA'):
+                image = image.convert('RGB')
+                
             if max_size:
                 image.thumbnail((max_size.width(), max_size.height()))
                 
-            qimage = QImage(image.tobytes('raw', 'RGB'),
+            # Use tobytes() with 'raw' format for direct memory access
+            img_data = image.tobytes('raw', 'RGB')
+            qimage = QImage(img_data,
                           image.width, image.height,
-                          3 * image.width,
+                          3 * image.width,  # bytes per line
                           QImage.Format.Format_RGB888)
                           
             return QPixmap.fromImage(qimage)

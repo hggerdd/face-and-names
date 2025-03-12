@@ -87,6 +87,8 @@ class NameAnalysisWidget(QWidget):
         """Called when the widget becomes hidden."""
         super().hideEvent(event)
         self.clear_faces()
+        # Ensure any open previews are closed
+        FaceImageWidget.close_all_previews()
         
     def refresh_names(self):
         """Update the list of available names."""
@@ -125,7 +127,7 @@ class NameAnalysisWidget(QWidget):
             for idx, (face_id, face_image, image_id) in enumerate(faces):
                 row = idx // columns
                 col = idx % columns
-                face_widget = FaceImageWidget(face_id, face_image, name)
+                face_widget = FaceImageWidget(face_id, face_image, name, db_manager=self.db_manager)
                 face_widget.image_id = image_id  # Store image_id for later use
                 face_widget.clicked.connect(self.on_face_clicked)
                 face_widget.rightClicked.connect(self.show_full_image)
@@ -189,6 +191,9 @@ class NameAnalysisWidget(QWidget):
                 image_data = self.db_manager.get_image_data(widget.image_id)
                 pixmap = ImageProcessor.create_pixmap_from_data(image_data)
                 if pixmap:
-                    self.preview_window.show_image(pixmap, pos)
+                    # Store preview window reference in the widget
+                    if not hasattr(widget, 'preview_window'):
+                        widget.preview_window = self.preview_window
+                    widget.preview_window.show_image(pixmap, pos)
             except Exception as e:
                 logging.error(f"Error showing full image: {e}")
