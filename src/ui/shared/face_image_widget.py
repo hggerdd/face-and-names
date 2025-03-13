@@ -21,10 +21,10 @@ class FaceImageWidget(QWidget):
 
     @classmethod
     def close_all_previews(cls):
-        """Close any open preview windows"""
-        if cls._current_preview and cls._shared_preview_window and cls._shared_preview_window.isVisible():
+        """Close any open preview windows."""
+        if cls._shared_preview_window and cls._shared_preview_window.isVisible():
             cls._shared_preview_window.hide_and_clear()
-            cls._current_preview = None
+            cls._shared_preview_window = None
 
     def __init__(self, face_id: int, image_data: bytes, name: str = None, 
                  predicted_name: str = None, face_size: int = 100, 
@@ -47,14 +47,17 @@ class FaceImageWidget(QWidget):
         layout.setSpacing(2)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Create image container with fixed width
+        # Create image container with fixed width and make it a parent for stacking
         self.image_container = QWidget(self)
         self.image_container.setFixedWidth(self.face_size)
-        image_layout = QVBoxLayout(self.image_container)
-        image_layout.setContentsMargins(0, 0, 0, 0)
-        image_layout.setSpacing(0)
+        self.image_container.setFixedHeight(self.face_size)  # Also fix height to ensure proper stacking
         
-        # Create delete button
+        # Create and setup main image label
+        self.image_label = self._create_image_label()
+        self.image_label.setParent(self.image_container)  # Set parent directly
+        self.image_label.move(0, 0)  # Position at top-left
+        
+        # Create delete button on top
         self.delete_button = QPushButton("🗑", self.image_container)
         self.delete_button.setFixedSize(20, 20)
         self.delete_button.setFont(QFont("Segoe UI Symbol", 10))
@@ -71,16 +74,12 @@ class FaceImageWidget(QWidget):
             }
         """)
         self.delete_button.clicked.connect(self._on_delete_clicked)
-        self.delete_button.raise_()  # Ensure button stays on top
         self.delete_button.move(self.face_size - 24, 4)  # Position in top-right corner
-        
-        # Create and setup main image label
-        self.image_label = self._create_image_label()
-        image_layout.addWidget(self.image_label)
-        
+        self.delete_button.raise_()  # Ensure button stays on top
+
         layout.addWidget(self.image_container, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        # Add fixed-width container for name labels with fixed maximum height
+        # Add fixed-width container for name labels
         labels_container = QWidget(self)
         labels_container.setFixedWidth(self.face_size)
         labels_layout = QVBoxLayout(labels_container)
@@ -166,8 +165,25 @@ class FaceImageWidget(QWidget):
         label.setFixedSize(self.face_size, self.face_size)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setCursor(Qt.CursorShape.PointingHandCursor)
-        label.mousePressEvent = self._handle_mouse_press
+        # Change to use the widget's event handlers instead
         return label
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events for the widget."""
+        if event.button() == Qt.MouseButton.RightButton:
+            # Show preview when right button is pressed
+            self.show_preview(event.globalPosition().toPoint())
+        elif event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.face_id)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release events for the widget."""
+        if event.button() == Qt.MouseButton.RightButton:
+            # Hide preview when right button is released
+            if FaceImageWidget._shared_preview_window:
+                FaceImageWidget._shared_preview_window.hide_and_clear()
+        super().mouseReleaseEvent(event)
 
     def _create_info_label(self) -> QLabel:
         """Create the face ID info label."""
@@ -177,21 +193,13 @@ class FaceImageWidget(QWidget):
         info_label.setStyleSheet("background-color: rgba(255, 255, 255, 128);")
         return info_label
 
-    def _handle_mouse_press(self, event):
-        """Handle mouse press events for the image label."""
-        if event.button() == Qt.MouseButton.RightButton:
-            # Close any existing previews first
-            self.close_all_previews()
-            # Show new preview with bounding box
-            self.show_preview(event.globalPosition().toPoint())
-            # Track this as current preview
-            FaceImageWidget._current_preview = self
-        elif event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.face_id)
-
     def _on_delete_clicked(self):
         """Handle delete button click."""
-        self.deleteClicked.emit(self.face_id)  # Emit signal with face_id
+        try:
+            logging.debug(f"Delete button clicked for face_id: {self.face_id}")
+            self.deleteClicked.emit(self.face_id)
+        except Exception as e:
+            logging.error(f"Error in delete click handler: {e}")
 
     def show_preview(self, global_pos):
         """Show preview with highlighted face box."""

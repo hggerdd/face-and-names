@@ -18,16 +18,11 @@ class DatabaseManager:
         
     @contextmanager
     def get_connection(self) -> Generator[tuple[sqlite3.Connection, sqlite3.Cursor], None, None]:
-        """Context manager for database connections.
-        
-        Usage:
-            with self.get_connection() as (conn, cursor):
-                cursor.execute(...)
-                conn.commit()
-        """
+        """Context manager for database connections."""
         conn = None
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute('PRAGMA foreign_keys = ON')  # Enable foreign key support
             cursor = conn.cursor()
             yield conn, cursor
         except Exception as e:
@@ -45,6 +40,7 @@ class DatabaseManager:
         Usage:
             with self.transaction() as cursor:
                 cursor.execute(...)
+
                 # Auto-commits if no exception, rolls back if exception occurs
         """
         with self.get_connection() as (conn, cursor):
@@ -875,24 +871,24 @@ class DatabaseManager:
             return False
 
     def delete_faces(self, face_ids: List[int]) -> bool:
-        """Delete faces from the database by their IDs.
-        
-        Args:
-            face_ids: List of face IDs to delete
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Delete faces from the database by their IDs."""
         try:
+            logging.debug(f"Starting face deletion for IDs: {face_ids}")
             with self.transaction() as cursor:
+                # First verify the faces exist
+                face_id_list = ','.join('?' * len(face_ids))
+                cursor.execute(f'SELECT COUNT(*) FROM faces WHERE id IN ({face_id_list})', face_ids)
+                count = cursor.fetchone()[0]
+                logging.debug(f"Found {count} faces to delete out of {len(face_ids)} requested")
+
                 # Delete faces
                 cursor.executemany(
                     'DELETE FROM faces WHERE id = ?',
                     [(face_id,) for face_id in face_ids]
                 )
                 deleted_count = cursor.rowcount
-                logging.info(f"Deleted {deleted_count} faces")
-                return True
+                logging.debug(f"Successfully deleted {deleted_count} faces")
+                return deleted_count > 0
         except Exception as e:
             logging.error(f"Error deleting faces: {e}")
             return False
