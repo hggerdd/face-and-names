@@ -28,7 +28,8 @@ class FaceImageWidget(QWidget):
 
     def __init__(self, face_id: int, image_data: bytes, name: str = None, 
                  predicted_name: str = None, face_size: int = 100, 
-                 active: bool = True, prediction_confidence: float = None, 
+                 active: bool = True, prediction_confidence: float = None,
+                 bbox: tuple = None,  # Add bbox parameter
                  parent=None, db_manager=None):
         super().__init__(parent)
         self.face_id = face_id
@@ -39,6 +40,7 @@ class FaceImageWidget(QWidget):
         self.predicted_name = predicted_name
         self.prediction_confidence = prediction_confidence
         self.db_manager = db_manager
+        self.bbox = bbox  # Store bbox information
         self.preview_window = None  # Only create when needed for right-click preview
         self.setup_ui()
 
@@ -205,10 +207,37 @@ class FaceImageWidget(QWidget):
         """Show preview with highlighted face box."""
         try:
             if hasattr(self, 'image_id') and self.image_id and self.db_manager is not None:
+                # First get bounding box if not already set
+                if not self.bbox:
+                    cursor = self.db_manager.get_connection().__enter__()[1]
+                    cursor.execute('''
+                        SELECT bbox_x, bbox_y, bbox_w, bbox_h 
+                        FROM faces 
+                        WHERE id = ?
+                    ''', (self.face_id,))
+                    bbox_data = cursor.fetchone()
+                    if bbox_data:
+                        self.bbox = bbox_data
+                
                 image_data = self.db_manager.get_image_data(self.image_id)
                 if image_data:
                     pixmap = ImageProcessor.create_pixmap_from_data(image_data)
                     if pixmap:
+                        # Draw bounding box if available
+                        if self.bbox:
+                            painter = QPainter(pixmap)
+                            painter.setPen(QPen(QColor(255, 0, 0), 3))  # Red pen, 3px width
+                            x, y, w, h = self.bbox
+                            # Convert relative coordinates to absolute
+                            img_w = pixmap.width()
+                            img_h = pixmap.height()
+                            box_x = int(x * img_w)
+                            box_y = int(y * img_h)
+                            box_w = int(w * img_w)
+                            box_h = int(h * img_h)
+                            painter.drawRect(box_x, box_y, box_w, box_h)
+                            painter.end()
+                            
                         # Initialize shared preview window if needed
                         if FaceImageWidget._shared_preview_window is None:
                             FaceImageWidget._shared_preview_window = ImagePreviewWindow()

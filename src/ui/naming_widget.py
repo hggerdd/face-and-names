@@ -89,6 +89,15 @@ class FaceGridWidget(QWidget):
     def create_face_widget(self, face_id, image_data, name, predicted_name, full_image_id):
         """Create a widget to display a single face."""
         try:
+            # Get the bounding box data
+            cursor = self.db_manager.get_connection().__enter__()[1]
+            cursor.execute('''
+                SELECT bbox_x, bbox_y, bbox_w, bbox_h 
+                FROM faces 
+                WHERE id = ?
+            ''', (face_id,))
+            bbox = cursor.fetchone()
+
             face_widget = FaceImageWidget(
                 face_id=face_id,
                 image_data=image_data,
@@ -97,7 +106,8 @@ class FaceGridWidget(QWidget):
                 face_size=self.face_size,
                 active=self.face_states.get(face_id, True),
                 db_manager=self.db_manager,
-                parent=self  # Ensure parent is set
+                bbox=bbox,  # Pass bbox data
+                parent=self
             )
             face_widget.image_id = full_image_id
             face_widget.clicked.connect(lambda: self.toggle_face_selection(face_id))

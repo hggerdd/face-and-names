@@ -126,7 +126,16 @@ class NameAnalysisWidget(QWidget):
             if not name:
                 return
                 
-            faces = self.db_manager.get_faces_by_name(name)
+            # Get faces with bounding box data
+            with self.db_manager.get_connection() as (_, cursor):
+                cursor.execute('''
+                    SELECT id, face_image, image_id, bbox_x, bbox_y, bbox_w, bbox_h
+                    FROM faces 
+                    WHERE name = ? AND face_image IS NOT NULL
+                    ORDER BY id
+                ''', (name,))
+                faces = cursor.fetchall()
+
             if not faces:
                 self.status_label.setText(f"No faces found for '{name}'")
                 return
@@ -136,14 +145,22 @@ class NameAnalysisWidget(QWidget):
             face_width = 130  # Face widget width + spacing
             columns = max(1, container_width // face_width)
             
-            for idx, (face_id, face_image, image_id) in enumerate(faces):
+            for idx, (face_id, face_image, image_id, bbox_x, bbox_y, bbox_w, bbox_h) in enumerate(faces):
                 row = idx // columns
                 col = idx % columns
-                face_widget = FaceImageWidget(face_id, face_image, name, predicted_name=None, db_manager=self.db_manager)
-                face_widget.image_id = image_id  # Store image_id for later use
+                bbox = (bbox_x, bbox_y, bbox_w, bbox_h) if bbox_x is not None else None
+                face_widget = FaceImageWidget(
+                    face_id=face_id,
+                    image_data=face_image,
+                    name=name,
+                    predicted_name=None,
+                    db_manager=self.db_manager,
+                    bbox=bbox
+                )
+                face_widget.image_id = image_id
                 face_widget.clicked.connect(self.on_face_clicked)
                 face_widget.rightClicked.connect(self.show_full_image)
-                face_widget.deleteClicked.connect(self.on_face_deleted)  # Connect delete signal
+                face_widget.deleteClicked.connect(self.on_face_deleted)
                 self.faces_layout.addWidget(face_widget, row, col)
                 
             self.status_label.setText(f"Found {len(faces)} faces for '{name}'")
