@@ -11,6 +11,7 @@ import logging
 from .shared.face_image_widget import FaceImageWidget
 from .shared.image_preview import ImagePreviewWindow
 from .shared.image_utils import ImageProcessor
+from .components.timeline_widget import TimelineWidget
 
 class NameAnalysisWidget(QWidget):
     """Widget for analyzing faces by name and managing name changes."""
@@ -42,9 +43,13 @@ class NameAnalysisWidget(QWidget):
         self.rename_button.setEnabled(False)
         left_layout.addWidget(self.rename_button)
         
-        # Right panel with face grid and preview
+        # Right panel with timeline, face grid and preview
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
+        
+        # Add timeline widget
+        self.timeline = TimelineWidget()
+        right_layout.addWidget(self.timeline)
         
         # Add scrollable face grid area
         scroll_area = QScrollArea()
@@ -106,6 +111,13 @@ class NameAnalysisWidget(QWidget):
         self.rename_button.setEnabled(bool(name))
         self.load_faces_for_name(name)
         self.preview_label.hide()
+        
+        # Update timeline
+        if name:
+            dates = self.db_manager.get_face_dates_by_name(name)
+            self.timeline.update_data(dates)
+        else:
+            self.timeline.update_data([])
     
     def load_faces_for_name(self, name):
         """Load and display all faces for the selected name."""

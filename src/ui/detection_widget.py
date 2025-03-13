@@ -44,7 +44,13 @@ class FaceDetectionWorker(QThread):
             processed_images = 0
             no_face_images = 0
             total_folders = len(self.directories)
-            
+
+            # Start new import session
+            import_id = self.processor.db_manager.start_new_import(total_folders)
+            if not import_id:
+                self.error.emit("Failed to start import session")
+                return
+
             # Initialize prediction helper if it exists
             if self.prediction_helper:
                 initialized = self.prediction_helper.initialize()
@@ -93,8 +99,12 @@ class FaceDetectionWorker(QThread):
                             # Extract and save metadata before face detection
                             metadata = extract_image_metadata(img_path)
                             
-                            # Create image entry and save metadata
-                            image_id = self.processor.db_manager.get_or_create_image_id(img_path, image.copy())
+                            # Create image entry and save metadata with import_id
+                            image_id = self.processor.db_manager.get_or_create_image_id(
+                                img_path, 
+                                image.copy(),
+                                import_id
+                            )
                             if not image_id:
                                 logging.error(f"Failed to create image entry for {img_path}")
                                 continue
@@ -164,6 +174,10 @@ class FaceDetectionWorker(QThread):
                                     total_faces,
                                     False
                                 )
+
+                            # Update import image count after each image
+                            self.processor.db_manager.update_import_image_count(import_id, processed_images)
+                            
                         except Exception as e:
                             logging.error(f"Error processing {img_path}: {e}")
                             continue

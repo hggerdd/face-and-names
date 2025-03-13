@@ -86,7 +86,7 @@ class DatabaseManager:
             logging.error(f"Error saving thumbnail: {e}")
             return False
 
-    def get_or_create_image_id(self, image_path: Path, image_data: np.ndarray = None) -> Optional[int]:
+    def get_or_create_image_id(self, image_path: Path, image_data: np.ndarray = None, import_id: int = None) -> Optional[int]:
         """Get existing image ID or create new entry with thumbnail."""
         try:
             base_folder, sub_folder, filename = self._get_image_location(image_path)
@@ -110,9 +110,9 @@ class DatabaseManager:
                 
                 # Create new image entry
                 cursor.execute('''
-                    INSERT INTO images (base_folder, sub_folder, filename, has_faces)
-                    VALUES (?, ?, ?, ?)
-                ''', (base_folder, sub_folder, filename, False))
+                    INSERT INTO images (base_folder, sub_folder, filename, has_faces, import_id)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (base_folder, sub_folder, filename, False, import_id))
                 
                 image_id = cursor.lastrowid
                 
@@ -210,10 +210,21 @@ class DatabaseManager:
 
     def get_faces_for_clustering(self) -> List[Tuple[int, bytes]]:
         """Get faces without names for clustering."""
-        return self.get_faces_query(
-            "AND name IS NULL",
-            ()
-        )
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute('''
+                    SELECT id, face_image
+                    FROM faces 
+                    WHERE face_image IS NOT NULL
+                    AND (name IS NULL OR name = '')
+                    ORDER BY id
+                ''')
+                faces = cursor.fetchall()
+                logging.info(f"Found {len(faces)} faces for clustering")
+                return faces
+        except Exception as e:
+            logging.error(f"Error getting faces for clustering: {e}")
+            return []
 
     def get_faces_for_prediction(self) -> List[Tuple[int, bytes, str]]:
         """Get all faces for prediction testing."""
@@ -448,20 +459,60 @@ class DatabaseManager:
     def initialize_database(self):
         """Initialize database with required tables and indexes."""
         with self.transaction() as cursor:
-            # Create images table
+            # First check if import_id column exists in images table
+            cursor.execute("PRAGMA table_info(images)")
+            columns = [col[1] for col in cursor.fetchall()]
+            has_import_id = 'import_id' in columns
+
+            # Create imports history table
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS images (
-                    image_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    base_folder TEXT,
-                    sub_folder TEXT,
-                    filename TEXT,
-                    processed_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    has_faces BOOLEAN,
-                    UNIQUE(base_folder, sub_folder, filename)
+                CREATE TABLE IF NOT EXISTS imports (
+                    import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    import_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    folder_count INTEGER,
+                    image_count INTEGER
                 )
             ''')
 
-            # Create thumbnails table
+            # For existing databases, create images table with base columns
+            if not has_import_id:
+                # Create basic images table if not exists
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS images (
+                        image_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        base_folder TEXT,
+                        sub_folder TEXT,
+                        filename TEXT,
+                        processed_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        has_faces BOOLEAN,
+                        UNIQUE(base_folder, sub_folder, filename)
+                    )
+                ''')
+                
+                # Then add import_id column to existing table
+                try:
+                    cursor.execute('ALTER TABLE images ADD COLUMN import_id INTEGER REFERENCES imports(import_id)')
+                    logging.info("Added import_id column to images table")
+                except Exception as e:
+                    if 'duplicate column name' not in str(e).lower():
+                        raise
+            else:
+                # For new databases, create complete images table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS images (
+                        image_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        base_folder TEXT,
+                        sub_folder TEXT,
+                        filename TEXT,
+                        processed_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        has_faces BOOLEAN,
+                        import_id INTEGER,
+                        UNIQUE(base_folder, sub_folder, filename),
+                        FOREIGN KEY (import_id) REFERENCES imports(import_id)
+                    )
+                ''')
+
+            # Create remaining tables
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS thumbnails (
                     image_id INTEGER PRIMARY KEY,
@@ -471,7 +522,6 @@ class DatabaseManager:
                 )
             ''')
             
-            # Create faces table with image_id reference
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS faces (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -489,7 +539,6 @@ class DatabaseManager:
                 )
             ''')
             
-            # Modified image_metadata table to use a composite primary key instead
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS image_metadata (
                     image_id INTEGER NOT NULL,
@@ -503,6 +552,9 @@ class DatabaseManager:
             ''')
             
             # Create indexes
+            # Add index for import_id
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_images_import ON images(import_id)')
+            
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_metadata_sorted ON image_metadata(image_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_metadata_image_id ON image_metadata(image_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_metadata_key ON image_metadata(meta_key)')
@@ -513,6 +565,50 @@ class DatabaseManager:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_thumbnails_image_id ON thumbnails(image_id)')
             
             logging.info("Database initialized successfully")
+
+    def start_new_import(self, folder_count: int) -> int:
+        """Start a new import session and return its ID.
+        
+        Args:
+            folder_count: Number of folders being processed
+            
+        Returns:
+            int: The new import ID
+        """
+        try:
+            with self.transaction() as cursor:
+                cursor.execute('''
+                    INSERT INTO imports (folder_count, image_count)
+                    VALUES (?, 0)
+                ''', (folder_count,))
+                import_id = cursor.lastrowid
+                logging.info(f"Started new import session with ID: {import_id}")
+                return import_id
+        except Exception as e:
+            logging.error(f"Error starting new import: {e}")
+            return None
+
+    def update_import_image_count(self, import_id: int, image_count: int) -> bool:
+        """Update the image count for an import session.
+        
+        Args:
+            import_id: The import session ID
+            image_count: Total number of images processed
+            
+        Returns:
+            bool: True if successful
+        """
+        try:
+            with self.transaction() as cursor:
+                cursor.execute('''
+                    UPDATE imports 
+                    SET image_count = ?
+                    WHERE import_id = ?
+                ''', (image_count, import_id))
+                return True
+        except Exception as e:
+            logging.error(f"Error updating import image count: {e}")
+            return False
 
     def get_image_data(self, image_id: int) -> Optional[bytes]:
         """Get full image data from thumbnails table"""
@@ -704,6 +800,24 @@ class DatabaseManager:
             logging.error(f"Error updating cluster ID: {e}")
             return False
 
+    def get_face_dates_by_name(self, name: str) -> List[str]:
+        """Get EXIF dates of images containing faces for a given name."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute('''
+                    SELECT DISTINCT m.meta_value
+                    FROM faces f
+                    JOIN images i ON f.image_id = i.image_id
+                    LEFT JOIN image_metadata m ON i.image_id = m.image_id
+                    WHERE f.name = ?
+                    AND m.meta_key = 'EXIF_DateTime'
+                    ORDER BY m.meta_value
+                ''', (name,))
+                return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            logging.error(f"Error getting face dates: {e}")
+            return []
+
     def find_duplicate_filenames(self) -> dict:
         """Find files that exist in multiple folders.
         
@@ -745,3 +859,68 @@ class DatabaseManager:
         except Exception as e:
             logging.error(f"Error finding duplicates: {e}")
             return {}
+    
+    def update_face_names(self, updates: List[tuple]) -> bool:
+        """Update names for multiple faces at once.
+        
+        Args:
+            updates: List of tuples (name, face_id) to update
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with self.transaction() as cursor:
+                updated_count = self._update_face_names(cursor, updates)
+                logging.info(f"Updated {updated_count} face names")
+                return True
+        except Exception as e:
+            logging.error(f"Error updating face names: {e}")
+            return False
+
+    def delete_faces(self, face_ids: List[int]) -> bool:
+        """Delete faces from the database by their IDs.
+        
+        Args:
+            face_ids: List of face IDs to delete
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with self.transaction() as cursor:
+                # Delete faces
+                cursor.executemany(
+                    'DELETE FROM faces WHERE id = ?',
+                    [(face_id,) for face_id in face_ids]
+                )
+                deleted_count = cursor.rowcount
+                logging.info(f"Deleted {deleted_count} faces")
+                return True
+        except Exception as e:
+            logging.error(f"Error deleting faces: {e}")
+            return False
+
+    def save_prediction_result(self, face_id: int, predicted_name: str, confidence: float) -> bool:
+        """Save prediction result for a face.
+        
+        Args:
+            face_id: ID of the face to update
+            predicted_name: Predicted name
+            confidence: Prediction confidence score
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with self.transaction() as cursor:
+                cursor.execute('''
+                    UPDATE faces 
+                    SET predicted_name = ?,
+                        prediction_confidence = ?
+                    WHERE id = ?
+                ''', (predicted_name, confidence, face_id))
+                return True
+        except Exception as e:
+            logging.error(f"Error saving prediction result: {e}")
+            return False

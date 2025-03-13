@@ -389,18 +389,21 @@ class NamingWidget(QWidget):
 
         face_ids = self.face_grid.get_selected_faces()
         if not face_ids:
-            self.status_label.setText("No faces selected.  Select faces first.")
+            self.status_label.setText("No faces selected. Select faces first.")
             return False
 
         try:
             current_cluster_id = self.current_cluster
-
-            if self.db_manager.update_face_names(face_ids, name):
+            
+            # Create list of (name, face_id) tuples for update
+            updates = [(name, face_id) for face_id in face_ids]
+            
+            if self.db_manager.update_face_names(updates):
                 self.status_label.setText(f"Saved name '{name}' for {len(face_ids)} selected faces")
 
                 # Get all current names and add the new one
                 current_names = set(self.names_list.item(i).text() 
-                                 for i in range(self.names_list.count()))
+                                for i in range(self.names_list.count()))
                 current_names.add(name)
                 
                 # Clear and repopulate the list in sorted order
@@ -415,7 +418,7 @@ class NamingWidget(QWidget):
                     self.status_label.setText("All faces have been named!")
                     self.update_controls(False)
                     return True
-
+                    
             logging.info(f"Saved name: {name} - {len(face_ids)} faces selected.")
 
             # Get sorted cluster IDs
