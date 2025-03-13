@@ -139,16 +139,34 @@ class NameAnalysisWidget(QWidget):
             for idx, (face_id, face_image, image_id) in enumerate(faces):
                 row = idx // columns
                 col = idx % columns
-                face_widget = FaceImageWidget(face_id, face_image, name, db_manager=self.db_manager)
+                face_widget = FaceImageWidget(face_id, face_image, name, predicted_name=None, db_manager=self.db_manager)
                 face_widget.image_id = image_id  # Store image_id for later use
                 face_widget.clicked.connect(self.on_face_clicked)
                 face_widget.rightClicked.connect(self.show_full_image)
+                face_widget.deleteClicked.connect(self.on_face_deleted)  # Connect delete signal
                 self.faces_layout.addWidget(face_widget, row, col)
                 
             self.status_label.setText(f"Found {len(faces)} faces for '{name}'")
         except Exception as e:
             self.status_label.setText(f"Error loading faces: {str(e)}")
-    
+            logging.error(f"Error loading faces: {e}")
+
+    def on_face_deleted(self, face_id):
+        """Handle face deletion from grid."""
+        try:
+            logging.debug(f"NameAnalysisWidget received delete signal for face_id: {face_id}")
+            # Delete the face from database first
+            if self.db_manager.delete_faces([face_id]):
+                logging.debug(f"Successfully deleted face_id {face_id} from database")
+                # Reload faces for the current name
+                self.load_faces_for_name(self.current_name)
+            else:
+                logging.error(f"Database deletion failed for face_id {face_id}")
+                
+        except Exception as e:
+            logging.error(f"Error deleting face {face_id}: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to delete face: {str(e)}")
+
     def clear_faces(self):
         """Remove all faces from the display."""
         while self.faces_layout.count():

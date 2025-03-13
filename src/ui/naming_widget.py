@@ -59,6 +59,33 @@ class FaceGridWidget(QWidget):
         total_count = len(self.current_faces)
         self.selection_count_label.setText(f"{selected_count} of {total_count} faces selected")
 
+    def on_face_deleted(self, face_id):
+        """Handle face deletion from grid."""
+        try:
+            logging.debug(f"FaceGridWidget received delete signal for face_id: {face_id}")
+            # Delete the face from database first
+            if self.db_manager.delete_faces([face_id]):
+                logging.debug(f"Successfully deleted face_id {face_id} from database")
+                # Remove face from current faces list
+                self.current_faces = [face for face in self.current_faces if face[0] != face_id]
+                logging.debug(f"Removed face_id {face_id} from current_faces")
+                
+                # Remove face from states
+                if face_id in self.face_states:
+                    del self.face_states[face_id]
+                    logging.debug(f"Removed face_id {face_id} from face_states")
+                
+                # Update the grid with the modified face list
+                self.update_faces(force=True)
+                self.update_selection_count()
+                logging.debug(f"Grid updated after deleting face_id {face_id}")
+            else:
+                logging.error(f"Database deletion failed for face_id {face_id}")
+                
+        except Exception as e:
+            logging.error(f"Error deleting face {face_id}: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to delete face: {str(e)}")
+
     def create_face_widget(self, face_id, image_data, name, predicted_name, full_image_id):
         """Create a widget to display a single face."""
         try:
@@ -74,6 +101,7 @@ class FaceGridWidget(QWidget):
             )
             face_widget.image_id = full_image_id
             face_widget.clicked.connect(lambda: self.toggle_face_selection(face_id))
+            face_widget.deleteClicked.connect(self.on_face_deleted)  # Connect delete signal
             return face_widget
         except Exception as e:
             logging.error(f"Error creating face widget: {e}")
