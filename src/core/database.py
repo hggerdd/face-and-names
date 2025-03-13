@@ -767,17 +767,13 @@ class DatabaseManager:
             return set()
 
     def get_unique_names(self) -> List[str]:
-        """Get all unique names from faces table."""
+        """Get all unique names from faces table (excluding predicted names)."""
         try:
             with self.get_connection() as (_, cursor):
                 cursor.execute("""
                     SELECT DISTINCT name 
                     FROM faces 
                     WHERE name IS NOT NULL AND name != '' 
-                    UNION 
-                    SELECT DISTINCT predicted_name 
-                    FROM faces 
-                    WHERE predicted_name IS NOT NULL AND predicted_name != ''
                     ORDER BY name
                 """)
                 names = [row[0] for row in cursor.fetchall()]

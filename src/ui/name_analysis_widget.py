@@ -139,7 +139,7 @@ class NameAnalysisWidget(QWidget):
             for idx, (face_id, face_image, image_id) in enumerate(faces):
                 row = idx // columns
                 col = idx % columns
-                face_widget = FaceImageWidget(face_id, face_image, name, db_manager=self.db_manager)
+                face_widget = FaceImageWidget(face_id, face_image, name, predicted_name=None, db_manager=self.db_manager)
                 face_widget.image_id = image_id  # Store image_id for later use
                 face_widget.clicked.connect(self.on_face_clicked)
                 face_widget.rightClicked.connect(self.show_full_image)
@@ -148,6 +148,7 @@ class NameAnalysisWidget(QWidget):
             self.status_label.setText(f"Found {len(faces)} faces for '{name}'")
         except Exception as e:
             self.status_label.setText(f"Error loading faces: {str(e)}")
+            logging.error(f"Error loading faces: {e}")
     
     def clear_faces(self):
         """Remove all faces from the display."""

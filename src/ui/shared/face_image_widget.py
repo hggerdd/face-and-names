@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizePolicy, QPushButton
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QImage
+from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QImage, QFont
 from PIL import Image, ImageOps, ImageEnhance
 import io
 import sqlite3
@@ -13,10 +13,18 @@ class FaceImageWidget(QWidget):
     """A widget that displays a face image with current and predicted names."""
     clicked = pyqtSignal(int)  # Emits face_id when clicked
     rightClicked = pyqtSignal(int, object)  # Emits face_id and global position
+    deleteClicked = pyqtSignal(int)  # Emits face_id when delete button clicked
     
     # Static variables for shared preview handling
     _current_preview = None
     _shared_preview_window = None
+
+    @classmethod
+    def close_all_previews(cls):
+        """Close any open preview windows"""
+        if cls._current_preview and cls._shared_preview_window and cls._shared_preview_window.isVisible():
+            cls._shared_preview_window.hide_and_clear()
+            cls._current_preview = None
 
     def __init__(self, face_id: int, image_data: bytes, name: str = None, 
                  predicted_name: str = None, face_size: int = 100, 
@@ -46,6 +54,26 @@ class FaceImageWidget(QWidget):
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.setSpacing(0)
         
+        # Create delete button
+        self.delete_button = QPushButton("🗑", self.image_container)
+        self.delete_button.setFixedSize(20, 20)
+        self.delete_button.setFont(QFont("Segoe UI Symbol", 10))
+        self.delete_button.setStyleSheet("""\
+            QPushButton {
+                background-color: rgba(255, 255, 255, 180);
+                border-radius: 10px;
+                border: none;
+                color: #444;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 0, 0, 180);
+                color: white;
+            }
+        """)
+        self.delete_button.clicked.connect(self._on_delete_clicked)
+        self.delete_button.raise_()  # Ensure button stays on top
+        self.delete_button.move(self.face_size - 24, 4)  # Position in top-right corner
+        
         # Create and setup main image label
         self.image_label = self._create_image_label()
         image_layout.addWidget(self.image_label)
@@ -66,7 +94,7 @@ class FaceImageWidget(QWidget):
             name_label.setFont(FontConfig.get_label_font())
             name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             name_label.setWordWrap(True)
-            name_label.setStyleSheet("""
+            name_label.setStyleSheet("""\
                 QLabel {
                     background-color: rgba(220, 220, 220, 128);
                     border-radius: 2px;
@@ -85,7 +113,7 @@ class FaceImageWidget(QWidget):
             pred_label.setFont(FontConfig.get_label_font())
             pred_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             pred_label.setWordWrap(True)
-            pred_label.setStyleSheet("""
+            pred_label.setStyleSheet("""\
                 QLabel {
                     background-color: rgba(200, 200, 255, 128);
                     border-radius: 2px;
@@ -161,81 +189,54 @@ class FaceImageWidget(QWidget):
         elif event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.face_id)
 
-    @classmethod
-    def close_all_previews(cls):
-        """Close any open preview window"""
-        if cls._shared_preview_window and cls._shared_preview_window.isVisible():
-            cls._shared_preview_window.hide_and_clear()
-            cls._current_preview = None
+    def _on_delete_clicked(self):
+        """Handle delete button click."""
+        self.deleteClicked.emit(self.face_id)  # Emit signal with face_id
 
     def show_preview(self, global_pos):
         """Show preview with highlighted face box."""
         try:
             if hasattr(self, 'image_id') and self.image_id and self.db_manager is not None:
-                full_image_data = self.db_manager.get_image_data(self.image_id)
-                if full_image_data:
-                    # Create base image
-                    image = Image.open(io.BytesIO(full_image_data)).convert('RGB')
-                    qimage = QImage(image.tobytes('raw', 'RGB'), 
-                                  image.width, image.height,
-                                  3 * image.width,
-                                  QImage.Format.Format_RGB888)
-                    pixmap = QPixmap.fromImage(qimage)
-
-                    # Create a copy to draw on
-                    drawing_pixmap = QPixmap(pixmap)
-
-                    # Draw bounding box
-                    try:
-                        conn = sqlite3.connect(self.db_manager.db_path)
-                        cursor = conn.cursor()
-                        cursor.execute('''
-                            SELECT bbox_x, bbox_y, bbox_w, bbox_h
-                            FROM faces
-                            WHERE id = ?
-                        ''', (self.face_id,))
-                        result = cursor.fetchone()
-                        
-                        if result:
-                            rel_x, rel_y, rel_w, rel_h = result
-                            x = int(rel_x * drawing_pixmap.width())
-                            y = int(rel_y * drawing_pixmap.height())
-                            w = int(rel_w * drawing_pixmap.width())
-                            h = int(rel_h * drawing_pixmap.height())
-                            
-                            painter = QPainter(drawing_pixmap)
-                            pen = QPen(QColor(255, 0, 0))  # Red color
-                            pen.setWidth(3)  # Make it thicker for visibility
-                            painter.setPen(pen)
-                            painter.drawRect(x, y, w, h)
-                            painter.end()
-
-                            # Create preview window if needed
-                            if FaceImageWidget._shared_preview_window is None:
-                                FaceImageWidget._shared_preview_window = ImagePreviewWindow()
-
-                            # Show preview with bounding box
-                            FaceImageWidget._shared_preview_window.show_image(drawing_pixmap, global_pos)
-                    finally:
-                        if 'conn' in locals():
-                            conn.close()
+                image_data = self.db_manager.get_image_data(self.image_id)
+                if image_data:
+                    pixmap = ImageProcessor.create_pixmap_from_data(image_data)
+                    if pixmap:
+                        # Initialize shared preview window if needed
+                        if FaceImageWidget._shared_preview_window is None:
+                            FaceImageWidget._shared_preview_window = ImagePreviewWindow()
+                        # Show preview
+                        FaceImageWidget._shared_preview_window.show_image(pixmap, global_pos)
                 else:
                     logging.warning(f"No image data found for image_id {self.image_id}")
         except Exception as e:
             logging.error(f"Error showing preview: {e}")
 
-    def mouseReleaseEvent(self, event):
-        """Handle mouse release events."""
-        if event.button() == Qt.MouseButton.RightButton:
-            # Hide preview when right mouse button is released
-            if FaceImageWidget._shared_preview_window and FaceImageWidget._shared_preview_window.isVisible():
-                FaceImageWidget._shared_preview_window.hide_and_clear()
-                if FaceImageWidget._current_preview == self:
-                    FaceImageWidget._current_preview = None
-        super().mouseReleaseEvent(event)
-
     def set_active(self, active: bool):
-        """Update the active state and refresh the image"""
+        """Update the active state and refresh the image."""
         if self.active != active:
             self.active = active
-            self.image_label.setPixmap(self._create_image_label().pixmap())
+            if isinstance(self.image_data, (bytes, bytearray)):
+                pixmap = ImageProcessor.create_pixmap_from_data(
+                    self.image_data,
+                    QSize(self.face_size, self.face_size)
+                )
+                if pixmap and not active:
+                    # Convert to grayscale for inactive state
+                    try:
+                        image = Image.open(io.BytesIO(self.image_data))
+                        image = ImageOps.grayscale(image).convert('RGB')
+                        enhancer = ImageEnhance.Brightness(image)
+                        image = enhancer.enhance(1.5)
+                        # Convert back to bytes
+                        img_byte_arr = io.BytesIO()
+                        image.save(img_byte_arr, format='PNG')
+                        inactive_data = img_byte_arr.getvalue()
+                        pixmap = ImageProcessor.create_pixmap_from_data(
+                            inactive_data,
+                            QSize(self.face_size, self.face_size)
+                        )
+                    except Exception as e:
+                        logging.error(f"Error creating inactive image: {e}")
+                        # Fall back to active image if conversion fails
+                if pixmap:
+                    self.image_label.setPixmap(pixmap)
