@@ -148,10 +148,44 @@ class FaceGridWidget(QWidget):
             QMessageBox.warning(self, "Error", f"Failed to rename face: {str(e)}")
 
     def on_image_double_clicked(self, face_id, predicted_name):
-        """Forward double-click event to parent widget."""
-        # Just emit the signal, parent will handle the logic
-        logging.debug(f"Forwarding double-click event for face {face_id} with predicted name '{predicted_name}'")
-        self.imageDoubleClicked.emit(face_id, predicted_name)
+        """Handle double-click on face image."""
+        try:
+            if not predicted_name:
+                return
+
+            if self.db_manager.update_face_name(face_id, predicted_name):
+                logging.debug(f"Updated name for face {face_id} to predicted name '{predicted_name}'")
+                
+                # Reload clusters to reflect changes
+                current_cluster_id = self.current_cluster
+                self.clusters = self.db_manager.get_face_clusters()
+
+                if not self.clusters:
+                    self.status_label.setText("All faces have been named!")
+                    self.update_controls(False)
+                    return
+
+                # Try to stay on current cluster if it still has faces
+                if current_cluster_id in self.clusters and self.clusters[current_cluster_id]:
+                    self.current_cluster = current_cluster_id
+                else:
+                    # Find next available cluster
+                    available_clusters = sorted(self.clusters.keys())
+                    higher_clusters = [cid for cid in available_clusters if cid > current_cluster_id]
+                    if higher_clusters:
+                        self.current_cluster = higher_clusters[0]
+                    else:
+                        # If no higher cluster available, use highest existing cluster
+                        self.current_cluster = max(available_clusters)
+
+                # Show updated cluster
+                self.show_current_cluster()
+                self.name_edit.setFocus()
+            else:
+                QMessageBox.warning(self, "Error", "Failed to update name")
+        except Exception as e:
+            logging.error(f"Error setting predicted name: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to set predicted name: {str(e)}")
 
     def toggle_face_selection(self, face_id):
         self.face_states[face_id] = not self.face_states.get(face_id, True)
@@ -610,7 +644,29 @@ class NamingWidget(QWidget):
             if self.db_manager.update_face_name(face_id, predicted_name):
                 logging.debug(f"Updated name for face {face_id} to predicted name '{predicted_name}'")
                 
-                # Reload faces for current cluster to reflect changes
+                # Reload clusters to reflect changes
+                current_cluster_id = self.current_cluster
+                self.clusters = self.db_manager.get_face_clusters()
+
+                if not self.clusters:
+                    self.status_label.setText("All faces have been named!")
+                    self.update_controls(False)
+                    return
+
+                # Try to stay on current cluster if it still has faces
+                if current_cluster_id in self.clusters and self.clusters[current_cluster_id]:
+                    self.current_cluster = current_cluster_id
+                else:
+                    # Find next available cluster
+                    available_clusters = sorted(self.clusters.keys())
+                    higher_clusters = [cid for cid in available_clusters if cid > current_cluster_id]
+                    if higher_clusters:
+                        self.current_cluster = higher_clusters[0]
+                    else:
+                        # If no higher cluster available, use highest existing cluster
+                        self.current_cluster = max(available_clusters)
+
+                # Show updated cluster
                 self.show_current_cluster()
                 self.name_edit.setFocus()
             else:
