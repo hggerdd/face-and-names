@@ -35,6 +35,7 @@ class NameAnalysisWidget(QWidget):
         # Add name list
         self.names_list = QListWidget()
         self.names_list.currentTextChanged.connect(self.on_name_selected)
+        self.names_list.setCursor(Qt.CursorShape.PointingHandCursor)
         left_layout.addWidget(self.names_list)
         
         # Add rename button below list
@@ -161,6 +162,7 @@ class NameAnalysisWidget(QWidget):
                 face_widget.clicked.connect(self.on_face_clicked)
                 face_widget.rightClicked.connect(self.show_full_image)
                 face_widget.deleteClicked.connect(self.on_face_deleted)
+                face_widget.nameDoubleClicked.connect(self.on_name_double_clicked)
                 self.faces_layout.addWidget(face_widget, row, col)
                 
             self.status_label.setText(f"Found {len(faces)} faces for '{name}'")
@@ -244,3 +246,25 @@ class NameAnalysisWidget(QWidget):
                     widget.preview_window.show_image(pixmap, pos)
             except Exception as e:
                 logging.error(f"Error showing full image: {e}")
+
+    def on_name_double_clicked(self, face_id, current_name):
+        """Handle double-click on name label."""
+        try:
+            new_name, ok = QInputDialog.getText(
+                self,
+                'Rename Face',
+                'Enter new name:',
+                text=current_name
+            )
+            
+            if ok and new_name and new_name != current_name:
+                if self.db_manager.update_face_name(face_id, new_name):
+                    logging.debug(f"Updated name for face {face_id} from '{current_name}' to '{new_name}'")
+                    # Refresh names list and reload faces
+                    self.refresh_names()
+                    self.load_faces_for_name(new_name)
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to update name")
+        except Exception as e:
+            logging.error(f"Error renaming face: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to rename face: {str(e)}")

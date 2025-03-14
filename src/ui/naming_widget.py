@@ -1,9 +1,9 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
     QLineEdit, QScrollArea, QGridLayout, QGroupBox, QSizePolicy, 
-    QListWidget, QMessageBox
+    QListWidget, QMessageBox, QInputDialog
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap, QImage
 from PIL import Image, ImageOps, ImageEnhance
 import io
@@ -17,6 +17,10 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %
 class FaceGridWidget(QWidget):
     """Widget to display a grid of faces from the same cluster."""
 
+    # Signal definitions
+    imageDoubleClicked = pyqtSignal(int, str)  # Emits face_id and predicted_name when image is double-clicked
+    clicked = pyqtSignal(int)  # Emits face_id when clicked
+    
     def __init__(self, db_manager=None, parent=None):
         super().__init__(parent)
         self.face_states = {}
@@ -89,14 +93,15 @@ class FaceGridWidget(QWidget):
     def create_face_widget(self, face_id, image_data, name, predicted_name, full_image_id):
         """Create a widget to display a single face."""
         try:
-            # Get the bounding box data
-            cursor = self.db_manager.get_connection().__enter__()[1]
-            cursor.execute('''
-                SELECT bbox_x, bbox_y, bbox_w, bbox_h 
-                FROM faces 
-                WHERE id = ?
-            ''', (face_id,))
-            bbox = cursor.fetchone()
+            bbox = None
+            # Get the bounding box data using proper connection handling
+            with self.db_manager.get_connection() as (_, cursor):
+                cursor.execute('''
+                    SELECT bbox_x, bbox_y, bbox_w, bbox_h 
+                    FROM faces 
+                    WHERE id = ?
+                ''', (face_id,))
+                bbox = cursor.fetchone()
 
             face_widget = FaceImageWidget(
                 face_id=face_id,
@@ -106,16 +111,47 @@ class FaceGridWidget(QWidget):
                 face_size=self.face_size,
                 active=self.face_states.get(face_id, True),
                 db_manager=self.db_manager,
-                bbox=bbox,  # Pass bbox data
+                bbox=bbox,
                 parent=self
             )
             face_widget.image_id = full_image_id
             face_widget.clicked.connect(lambda: self.toggle_face_selection(face_id))
-            face_widget.deleteClicked.connect(self.on_face_deleted)  # Connect delete signal
+            face_widget.deleteClicked.connect(self.on_face_deleted)
+            face_widget.nameDoubleClicked.connect(self.on_name_double_clicked)
+            # Forward the imageDoubleClicked signal
+            face_widget.imageDoubleClicked.connect(lambda fid, pred: self.imageDoubleClicked.emit(fid, pred))
             return face_widget
         except Exception as e:
             logging.error(f"Error creating face widget: {e}")
             return None
+
+    def on_name_double_clicked(self, face_id, current_name):
+        """Handle double-click on name label."""
+        try:
+            new_name, ok = QInputDialog.getText(
+                self,
+                'Rename Face',
+                'Enter new name:',
+                text=current_name
+            )
+            
+            if ok and new_name and new_name != current_name:
+                if self.db_manager.update_face_name(face_id, new_name):
+                    # Update the face widget's name
+                    logging.debug(f"Updated name for face {face_id} from '{current_name}' to '{new_name}'")
+                    # Reload faces to reflect the change
+                    self.update_faces(force=True)
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to update name")
+        except Exception as e:
+            logging.error(f"Error renaming face: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to rename face: {str(e)}")
+
+    def on_image_double_clicked(self, face_id, predicted_name):
+        """Forward double-click event to parent widget."""
+        # Just emit the signal, parent will handle the logic
+        logging.debug(f"Forwarding double-click event for face {face_id} with predicted name '{predicted_name}'")
+        self.imageDoubleClicked.emit(face_id, predicted_name)
 
     def toggle_face_selection(self, face_id):
         self.face_states[face_id] = not self.face_states.get(face_id, True)
@@ -199,6 +235,8 @@ class NamingWidget(QWidget):
     def __init__(self, db_manager, parent=None):
         super().__init__(parent)
         self.db_manager = db_manager
+        self.current_name = None
+        self.preview_window = ImagePreviewWindow()
         self.current_cluster = 0
         self.clusters = {}
         self.last_cluster_id = None
@@ -279,6 +317,8 @@ class NamingWidget(QWidget):
 
         # Pass self.db_manager (not self) to FaceGridWidget:
         self.face_grid = FaceGridWidget(self.db_manager, self)
+        # Connect grid signals including image double click
+        self.face_grid.imageDoubleClicked.connect(self.on_image_double_clicked)
         scroll_area.setWidget(self.face_grid)
 
         faces_layout.addWidget(scroll_area)
@@ -386,7 +426,7 @@ class NamingWidget(QWidget):
         cluster_ids = sorted(self.clusters.keys())
         current_idx = cluster_ids.index(self.current_cluster)
         
-        if current_idx > 0:
+        if (current_idx > 0):
             # There is a lower number available
             self.current_cluster = cluster_ids[current_idx - 1]
         else:
@@ -560,3 +600,21 @@ class NamingWidget(QWidget):
             except Exception as e:
                 logging.error(f"Error deleting faces: {e}")
                 self.status_label.setText(f"Error: {str(e)}")
+
+    def on_image_double_clicked(self, face_id, predicted_name):
+        """Handle double-click on face image."""
+        try:
+            if not predicted_name:
+                return
+
+            if self.db_manager.update_face_name(face_id, predicted_name):
+                logging.debug(f"Updated name for face {face_id} to predicted name '{predicted_name}'")
+                
+                # Reload faces for current cluster to reflect changes
+                self.show_current_cluster()
+                self.name_edit.setFocus()
+            else:
+                QMessageBox.warning(self, "Error", "Failed to update name")
+        except Exception as e:
+            logging.error(f"Error setting predicted name: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to set predicted name: {str(e)}")

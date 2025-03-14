@@ -14,6 +14,8 @@ class FaceImageWidget(QWidget):
     clicked = pyqtSignal(int)  # Emits face_id when clicked
     rightClicked = pyqtSignal(int, object)  # Emits face_id and global position
     deleteClicked = pyqtSignal(int)  # Emits face_id when delete button clicked
+    nameDoubleClicked = pyqtSignal(int, str)  # Emits face_id and current name when name is double-clicked
+    imageDoubleClicked = pyqtSignal(int, str)  # Emits face_id and predicted name when image is double-clicked
     
     # Static variables for shared preview handling
     _current_preview = None
@@ -90,20 +92,36 @@ class FaceImageWidget(QWidget):
 
         # Add name label if provided
         if self.name:
-            name_label = QLabel(self.name, self)
-            name_label.setFixedHeight(20)  # Fixed height for consistency
-            name_label.setFont(FontConfig.get_label_font())
-            name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            name_label.setWordWrap(True)
-            name_label.setStyleSheet("""\
+            class ClickableLabel(QLabel):
+                def mouseDoubleClickEvent(self, event):
+                    logging.debug(f"Double-click detected on name label")
+                    if hasattr(self, 'parent_widget'):
+                        # Call the parent widget's double click handler
+                        self.parent_widget._on_name_double_click()
+                    super().mouseDoubleClickEvent(event)
+
+            self.name_label = ClickableLabel(self.name, self)
+            self.name_label.parent_widget = self  # Store reference to parent widget
+            self.name_label.setFixedHeight(20)  # Fixed height for consistency
+            self.name_label.setFont(FontConfig.get_label_font())
+            self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.name_label.setWordWrap(True)
+            self.name_label.setStyleSheet("""\
                 QLabel {
                     background-color: rgba(220, 220, 220, 128);
                     border-radius: 2px;
                     padding: 1px 3px;
                     margin: 0px;
                 }
+                QLabel:hover {
+                    background-color: rgba(200, 200, 200, 180);
+                }
             """)
-            labels_layout.addWidget(name_label)
+            # Set cursor separately instead of in stylesheet
+            self.name_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            labels_layout.addWidget(self.name_label)
+        else:
+            self.name_label = None
 
         # Add predicted name if provided
         if self.predicted_name:
@@ -167,16 +185,20 @@ class FaceImageWidget(QWidget):
         label.setFixedSize(self.face_size, self.face_size)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Change to use the widget's event handlers instead
+        # No need to connect click events here since we handle them in mousePressEvent
         return label
 
     def mousePressEvent(self, event):
         """Handle mouse press events for the widget."""
-        if event.button() == Qt.MouseButton.RightButton:
-            # Show preview when right button is pressed
-            self.show_preview(event.globalPosition().toPoint())
-        elif event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.face_id)
+        # Only handle clicks on the image_container or image_label
+        clicked_widget = self.childAt(event.position().toPoint())
+        if clicked_widget in (self.image_label, self.image_container):
+            if event.button() == Qt.MouseButton.RightButton:
+                # Show preview when right button is pressed on image
+                self.show_preview(event.globalPosition().toPoint())
+            elif event.button() == Qt.MouseButton.LeftButton:
+                # Only emit clicked signal if clicking the image
+                self.clicked.emit(self.face_id)
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -186,6 +208,14 @@ class FaceImageWidget(QWidget):
             if FaceImageWidget._shared_preview_window:
                 FaceImageWidget._shared_preview_window.hide_and_clear()
         super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double click on the image."""
+        clicked_widget = self.childAt(event.position().toPoint())
+        if clicked_widget in (self.image_label, self.image_container) and self.predicted_name:
+            logging.debug(f"Image double-clicked for face {self.face_id} with predicted name '{self.predicted_name}'")
+            self.imageDoubleClicked.emit(self.face_id, self.predicted_name)
+        super().mouseDoubleClickEvent(event)
 
     def _create_info_label(self) -> QLabel:
         """Create the face ID info label."""
@@ -207,17 +237,17 @@ class FaceImageWidget(QWidget):
         """Show preview with highlighted face box."""
         try:
             if hasattr(self, 'image_id') and self.image_id and self.db_manager is not None:
-                # First get bounding box if not already set
+                # Get bounding box if not already set, using proper connection handling
                 if not self.bbox:
-                    cursor = self.db_manager.get_connection().__enter__()[1]
-                    cursor.execute('''
-                        SELECT bbox_x, bbox_y, bbox_w, bbox_h 
-                        FROM faces 
-                        WHERE id = ?
-                    ''', (self.face_id,))
-                    bbox_data = cursor.fetchone()
-                    if bbox_data:
-                        self.bbox = bbox_data
+                    with self.db_manager.get_connection() as (_, cursor):
+                        cursor.execute('''
+                            SELECT bbox_x, bbox_y, bbox_w, bbox_h 
+                            FROM faces 
+                            WHERE id = ?
+                        ''', (self.face_id,))
+                        bbox_data = cursor.fetchone()
+                        if bbox_data:
+                            self.bbox = bbox_data
                 
                 image_data = self.db_manager.get_image_data(self.image_id)
                 if image_data:
@@ -277,3 +307,9 @@ class FaceImageWidget(QWidget):
                         # Fall back to active image if conversion fails
                 if pixmap:
                     self.image_label.setPixmap(pixmap)
+
+    def _on_name_double_click(self):
+        """Handle double-click on name label."""
+        logging.debug(f"Name double-click handler called for face {self.face_id} with name '{self.name}'")
+        if self.name:
+            self.nameDoubleClicked.emit(self.face_id, self.name)
