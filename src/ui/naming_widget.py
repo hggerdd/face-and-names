@@ -20,6 +20,7 @@ class FaceGridWidget(QWidget):
     # Signal definitions
     imageDoubleClicked = pyqtSignal(int, str)  # Emits face_id and predicted_name when image is double-clicked
     clicked = pyqtSignal(int)  # Emits face_id when clicked
+    nameDoubleClicked = pyqtSignal(int, str)  # Emits face_id and current_name when name is double-clicked
     
     def __init__(self, db_manager=None, parent=None):
         super().__init__(parent)
@@ -117,7 +118,12 @@ class FaceGridWidget(QWidget):
             face_widget.image_id = full_image_id
             face_widget.clicked.connect(lambda: self.toggle_face_selection(face_id))
             face_widget.deleteClicked.connect(self.on_face_deleted)
-            face_widget.nameDoubleClicked.connect(self.on_name_double_clicked)
+            
+            # Connect and log name double click
+            logging.debug(f"Connecting nameDoubleClicked signal for face_id={face_id}")
+            face_widget.nameDoubleClicked.connect(lambda fid, name: self.on_name_double_clicked(fid, name))
+            face_widget.nameDoubleClicked.connect(lambda fid, name: self.nameDoubleClicked.emit(fid, name))
+            
             # Forward the imageDoubleClicked signal
             face_widget.imageDoubleClicked.connect(lambda fid, pred: self.imageDoubleClicked.emit(fid, pred))
             return face_widget
@@ -127,6 +133,7 @@ class FaceGridWidget(QWidget):
 
     def on_name_double_clicked(self, face_id, current_name):
         """Handle double-click on name label."""
+        logging.debug(f"FaceGridWidget.on_name_double_clicked called for face_id={face_id}, current_name='{current_name}'")
         try:
             new_name, ok = QInputDialog.getText(
                 self,
@@ -351,8 +358,15 @@ class NamingWidget(QWidget):
 
         # Pass self.db_manager (not self) to FaceGridWidget:
         self.face_grid = FaceGridWidget(self.db_manager, self)
-        # Connect grid signals including image double click
+        logging.debug("Creating FaceGridWidget in NamingWidget")
+        
+        # Connect grid signals including image double click and name double click
         self.face_grid.imageDoubleClicked.connect(self.on_image_double_clicked)
+        logging.debug("Connected imageDoubleClicked signal in NamingWidget")
+        
+        self.face_grid.nameDoubleClicked.connect(self.on_name_double_clicked)
+        logging.debug("Connected nameDoubleClicked signal in NamingWidget")
+        
         scroll_area.setWidget(self.face_grid)
 
         faces_layout.addWidget(scroll_area)
@@ -674,3 +688,59 @@ class NamingWidget(QWidget):
         except Exception as e:
             logging.error(f"Error setting predicted name: {e}")
             QMessageBox.warning(self, "Error", f"Failed to set predicted name: {str(e)}")
+
+    def on_name_double_clicked(self, face_id, current_name):
+        """Handle double-click on name label to rename face."""
+        logging.debug(f"NamingWidget.on_name_double_clicked called with face_id={face_id}, current_name='{current_name}'")
+        try:
+            new_name, ok = QInputDialog.getText(
+                self,
+                'Rename Face',
+                'Enter new name:',
+                text=current_name
+            )
+            
+            if ok and new_name and new_name != current_name:
+                if self.db_manager.update_face_name(face_id, new_name):
+                    logging.debug(f"Updated name for face {face_id} from '{current_name}' to '{new_name}'")
+                    
+                    # Reload clusters to reflect changes
+                    current_cluster_id = self.current_cluster
+                    self.clusters = self.db_manager.get_face_clusters()
+
+                    if not self.clusters:
+                        self.status_label.setText("All faces have been named!")
+                        self.update_controls(False)
+                        return
+
+                    # Try to stay on current cluster if it still has faces
+                    if current_cluster_id in self.clusters and self.clusters[current_cluster_id]:
+                        self.current_cluster = current_cluster_id
+                    else:
+                        # Find next available cluster
+                        available_clusters = sorted(self.clusters.keys())
+                        higher_clusters = [cid for cid in available_clusters if cid > current_cluster_id]
+                        if higher_clusters:
+                            self.current_cluster = higher_clusters[0]
+                        else:
+                            # If no higher cluster available, use highest existing cluster
+                            self.current_cluster = max(available_clusters)
+
+                    # Get all current names and add the new one
+                    current_names = set(self.names_list.item(i).text() 
+                                    for i in range(self.names_list.count()))
+                    current_names.add(new_name)
+                    
+                    # Clear and repopulate the list in sorted order
+                    self.names_list.clear()
+                    self.names_list.addItems(sorted(current_names))
+
+                    # Show updated cluster
+                    self.show_current_cluster()
+                    self.status_label.setText(f"Renamed face to '{new_name}'")
+                    self.name_edit.setFocus()
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to update name")
+        except Exception as e:
+            logging.error(f"Error renaming face: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to rename face: {str(e)}")

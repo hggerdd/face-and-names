@@ -310,6 +310,6 @@ class FaceImageWidget(QWidget):
 
     def _on_name_double_click(self):
         """Handle double-click on name label."""
-        logging.debug(f"Name double-click handler called for face {self.face_id} with name '{self.name}'")
+        logging.debug(f"FaceImageWidget._on_name_double_click called for face {self.face_id} with name '{self.name}'")
         if self.name:
             self.nameDoubleClicked.emit(self.face_id, self.name)
