@@ -18,8 +18,16 @@ class ClusteringWorker(QThread):
         self.algorithm = algorithm
         self.params = params
         self.model_type = model_type
-        self.clusterer = FaceClusterer(model_type=model_type)
+        self._clusterer = None  # Initialize later
         self._is_running = True
+
+    @property
+    def clusterer(self):
+        """Lazy initialization of FaceClusterer."""
+        if self._clusterer is None:
+            self.progress.emit("Initializing face recognition model...", 0)
+            self._clusterer = FaceClusterer(model_type=self.model_type)
+        return self._clusterer
 
     def stop(self):
         """Safely stop the clustering process."""
@@ -117,6 +125,7 @@ class ClusteringWidget(QWidget):
         super().__init__(parent)
         self.db_manager = db_manager
         self.setup_ui()
+        self.info_label.setText("Click 'Start Clustering' to begin")  # Default message
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -291,19 +300,26 @@ class ClusteringWidget(QWidget):
         return params
 
     def update_info(self):
-        """Update database info."""        
-        try:
-            face_count = len(self.db_manager.get_faces_for_clustering())
-            self.info_label.setText(f"Found {face_count} faces in database ready for clustering")
-        except Exception as e:
-            self.info_label.setText(f"Error loading database info: {str(e)}")
+        """Update database info only when clustering starts."""
+        pass  # No longer automatically loads data
 
     def start_clustering(self):
         """Start the clustering process."""        
         self.start_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.progress_bar.setValue(0)
-        self.status_label.setText("Initializing clustering...")
+        
+        # Now load the face count info when starting
+        try:
+            face_count = len(self.db_manager.get_faces_for_clustering())
+            if face_count == 0:
+                self.clustering_error("No faces found for clustering")
+                return
+            self.info_label.setText(f"Found {face_count} faces in database ready for clustering")
+            self.status_label.setText("Initializing clustering...")
+        except Exception as e:
+            self.clustering_error(f"Error loading faces: {str(e)}")
+            return
         
         # Reset statistics
         for label in self.stats_labels.values():
@@ -462,10 +478,9 @@ class ClusteringWidget(QWidget):
             self.status_label.setText(f"Error: {str(e)}")
 
     def showEvent(self, event):
-        """Reload data every time the widget becomes visible."""        
+        """Just show the widget without loading data."""
         super().showEvent(event)
-        # Always update info when shown, regardless of data_loaded state
-        self.update_info()
+        # No longer calls update_info() here
 
     def hideEvent(self, event):
         """Handle widget being hidden."""        

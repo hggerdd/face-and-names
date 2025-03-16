@@ -30,13 +30,17 @@ class FaceClusterer:
     def __init__(self, device=None, model_type: ModelType = ModelType.VGGFACE2):
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_type = model_type
-        self._initialize_model()
-        logging.info(f"FaceClusterer initialized using device: {self.device} and model: {model_type.value}")
+        self._model = None
+        logging.info(f"FaceClusterer initialized with device: {self.device} and model type: {model_type.value}")
 
-    def _initialize_model(self):
-        """Initialize the face recognition model based on selected type."""
-        pretrained = 'vggface2' if self.model_type == ModelType.VGGFACE2 else 'casia-webface'
-        self.model = InceptionResnetV1(pretrained=pretrained).eval().to(self.device)
+    @property
+    def model(self):
+        """Lazy initialization of the face recognition model."""
+        if self._model is None:
+            logging.info(f"Loading face recognition model: {self.model_type.value}")
+            pretrained = 'vggface2' if self.model_type == ModelType.VGGFACE2 else 'casia-webface'
+            self._model = InceptionResnetV1(pretrained=pretrained).eval().to(self.device)
+        return self._model
 
     def _get_face_embeddings(self, face_images: List[bytes], progress_callback=None) -> np.ndarray:
         """Convert face images to embeddings using FaceNet."""
@@ -59,9 +63,9 @@ class FaceClusterer:
                 img = img.permute(2, 0, 1).unsqueeze(0)
                 img = img.to(self.device)
                 
-                # Get embedding
+                # Get embedding using lazy-loaded model
                 with torch.no_grad():
-                    embedding = self.model(img)
+                    embedding = self.model(img)  # This will load model if needed
                 embeddings.append(embedding.cpu().numpy().flatten())
                 
             except Exception as e:
