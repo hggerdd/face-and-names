@@ -204,10 +204,11 @@ class DatabaseManager:
             logging.error(f"Error getting faces: {e}")
             return []
 
-    def get_faces_for_clustering(self, latest_import_only: bool = False) -> List[Tuple[int, bytes]]:
+    def get_faces_for_clustering(self, latest_import_only: bool = False, selected_folders: List[Tuple[str, str]] = None) -> List[Tuple[int, bytes]]:
         """Get faces without names for clustering.
         Args:
             latest_import_only: If True, only return faces from the latest import
+            selected_folders: List of (base_folder, sub_folder) tuples to filter by
         """
         try:
             query_parts = []
@@ -221,6 +222,15 @@ class DatabaseManager:
                     if latest_import is not None:
                         query_parts.append("i.import_id = ?")
                         params.append(latest_import)
+
+            if selected_folders:
+                # Build folder filter condition
+                folder_conditions = []
+                for base_folder, sub_folder in selected_folders:
+                    folder_conditions.append("(i.base_folder = ? AND i.sub_folder = ?)")
+                    params.extend([base_folder, sub_folder])
+                if folder_conditions:
+                    query_parts.append(f"({' OR '.join(folder_conditions)})")
 
             base_query = '''
                 SELECT f.id, f.face_image 
@@ -238,7 +248,7 @@ class DatabaseManager:
             with self.get_connection() as (_, cursor):
                 cursor.execute(base_query, params)
                 faces = cursor.fetchall()
-                logging.info(f"Retrieved {len(faces)} faces for clustering{' (latest import only)' if latest_import_only else ''}")
+                logging.info(f"Retrieved {len(faces)} faces for clustering{' (latest import only)' if latest_import_only else ''}{' (folder filtered)' if selected_folders else ''}")
                 return faces
                 
         except Exception as e:
