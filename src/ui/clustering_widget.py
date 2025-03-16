@@ -1,10 +1,12 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                             QLabel, QProgressBar, QComboBox, QSpinBox, 
-                            QDoubleSpinBox, QGroupBox, QGridLayout, QMessageBox, QCheckBox)
+                            QDoubleSpinBox, QGroupBox, QGridLayout, QMessageBox, QCheckBox,
+                            QSplitter)
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 import logging
 from pathlib import Path
 from ..core.face_clusterer import ClusteringAlgorithm, FaceClusterer, ModelType
+from .components.folder_tree import FolderTreeWidget
 
 class ClusteringWorker(QThread):
     progress = pyqtSignal(str, int)  # status message, processed count
@@ -12,13 +14,14 @@ class ClusteringWorker(QThread):
     finished = pyqtSignal(object)  # ClusteringResult
     error = pyqtSignal(str)
 
-    def __init__(self, db_manager, algorithm, params, model_type, latest_import_only=False):
+    def __init__(self, db_manager, algorithm, params, model_type, latest_import_only=False, selected_folders=None):
         super().__init__()
         self.db_manager = db_manager
         self.algorithm = algorithm
         self.params = params
         self.model_type = model_type
         self.latest_import_only = latest_import_only
+        self.selected_folders = selected_folders
         self._clusterer = None  # Initialize later
         self._is_running = True
 
@@ -46,7 +49,10 @@ class ClusteringWorker(QThread):
             if not self._is_running:
                 return
             self.progress.emit("Loading faces from database...", 0)
-            faces = self.db_manager.get_faces_for_clustering(latest_import_only=self.latest_import_only)
+            faces = self.db_manager.get_faces_for_clustering(
+                latest_import_only=self.latest_import_only,
+                selected_folders=self.selected_folders
+            )
             if not faces:
                 self.error.emit("No faces found for clustering")
                 return
@@ -136,6 +142,35 @@ class ClusteringWidget(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
 
+        # Create horizontal splitter
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        layout.addWidget(splitter)
+
+        # Left side - Folder selection
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+
+        # Folder selection buttons
+        folder_buttons = QHBoxLayout()
+        self.select_all_button = QPushButton("Select All")
+        self.select_all_button.clicked.connect(self._select_all_folders)
+        self.deselect_all_button = QPushButton("Deselect All")
+        self.deselect_all_button.clicked.connect(self._deselect_all_folders)
+        folder_buttons.addWidget(self.select_all_button)
+        folder_buttons.addWidget(self.deselect_all_button)
+        left_layout.addLayout(folder_buttons)
+
+        # Folder tree
+        self.folder_tree = FolderTreeWidget()
+        self.folder_tree.folderSelectionChanged.connect(self._on_folder_selection_changed)
+        left_layout.addWidget(self.folder_tree)
+
+        splitter.addWidget(left_widget)
+
+        # Right side - Clustering controls
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+
         # Info section
         info_group = QGroupBox("Database Info")
         info_layout = QVBoxLayout(info_group)
@@ -153,7 +188,7 @@ class ClusteringWidget(QWidget):
         self.delete_names_button.setStyleSheet("background-color: #ffcccc")  # Light red background
         info_layout.addWidget(self.delete_names_button)
         
-        layout.addWidget(info_group)
+        right_layout.addWidget(info_group)
 
         # Advanced settings
         advanced_group = QGroupBox("Advanced Settings")
@@ -166,7 +201,7 @@ class ClusteringWidget(QWidget):
         advanced_layout.addWidget(QLabel("Max Cluster Size:"), 0, 0)
         advanced_layout.addWidget(self.max_cluster_size, 0, 1)
         
-        layout.addWidget(advanced_group)
+        right_layout.addWidget(advanced_group)
 
         # Model selection
         model_group = QGroupBox("Face Recognition Model")
@@ -177,7 +212,7 @@ class ClusteringWidget(QWidget):
             self.model_combo.addItem(model.value, model)
         model_layout.addWidget(self.model_combo)
         
-        layout.addWidget(model_group)
+        right_layout.addWidget(model_group)
 
         # Algorithm selection
         algo_group = QGroupBox("Clustering Algorithm")
@@ -189,12 +224,12 @@ class ClusteringWidget(QWidget):
         self.algo_combo.currentIndexChanged.connect(self.on_algorithm_changed)
         algo_layout.addWidget(self.algo_combo)
         
-        layout.addWidget(algo_group)
+        right_layout.addWidget(algo_group)
 
         # Parameters
         self.params_group = QGroupBox("Algorithm Parameters")
         self.params_layout = QGridLayout(self.params_group)
-        layout.addWidget(self.params_group)
+        right_layout.addWidget(self.params_group)
         
         # Statistics section
         stats_group = QGroupBox("Clustering Statistics")
@@ -214,7 +249,7 @@ class ClusteringWidget(QWidget):
             stats_layout.addWidget(label, row // 2, row % 2)
             row += 1
             
-        layout.addWidget(stats_group)
+        right_layout.addWidget(stats_group)
 
         # Progress section with detailed status
         progress_group = QGroupBox("Progress")
@@ -227,7 +262,7 @@ class ClusteringWidget(QWidget):
         self.progress_bar.setTextVisible(True)
         progress_layout.addWidget(self.progress_bar)
         
-        layout.addWidget(progress_group)
+        right_layout.addWidget(progress_group)
 
         # Control buttons
         button_layout = QHBoxLayout()
@@ -241,12 +276,19 @@ class ClusteringWidget(QWidget):
         self.cancel_button.setEnabled(False)
         button_layout.addWidget(self.cancel_button)
         
-        layout.addLayout(button_layout)
-        layout.addStretch()
+        right_layout.addLayout(button_layout)
+        right_layout.addStretch()
 
         # Initialize parameter widgets
         self.setup_parameter_widgets()
         self.on_algorithm_changed(0)
+
+        splitter.addWidget(right_widget)
+
+        # Set initial splitter sizes (30% left, 70% right)
+        splitter.setSizes([300, 700])
+
+        self.selected_folders = []  # Store selected folders
 
     def setup_parameter_widgets(self):
         """Initialize parameter widgets for each algorithm."""        
@@ -311,7 +353,7 @@ class ClusteringWidget(QWidget):
         return params
 
     def update_info(self):
-        """Update database info only when clustering starts."""
+        """Update database info only when clustering starts."""        
         pass  # No longer automatically loads data
 
     def start_clustering(self):
@@ -322,7 +364,10 @@ class ClusteringWidget(QWidget):
         
         # Now load the face count info when starting
         try:
-            face_count = len(self.db_manager.get_faces_for_clustering())
+            face_count = len(self.db_manager.get_faces_for_clustering(
+                latest_import_only=self.latest_import_checkbox.isChecked(),
+                selected_folders=self.selected_folders if self.selected_folders else None
+            ))
             if face_count == 0:
                 self.clustering_error("No faces found for clustering")
                 return
@@ -341,7 +386,14 @@ class ClusteringWidget(QWidget):
         model_type = self.model_combo.currentData()
         latest_import_only = self.latest_import_checkbox.isChecked()
 
-        self.worker = ClusteringWorker(self.db_manager, algorithm, params, model_type, latest_import_only)
+        self.worker = ClusteringWorker(
+            self.db_manager, 
+            algorithm, 
+            params, 
+            model_type, 
+            latest_import_only,
+            self.selected_folders if self.selected_folders else None
+        )
         self.worker.progress.connect(self.update_progress)
         self.worker.stats.connect(self.update_stats)
         self.worker.finished.connect(self.clustering_finished)
@@ -490,12 +542,28 @@ class ClusteringWidget(QWidget):
             self.status_label.setText(f"Error: {str(e)}")
 
     def showEvent(self, event):
-        """Just show the widget without loading data."""
+        """Initialize folder tree when widget is shown."""        
         super().showEvent(event)
-        # No longer calls update_info() here
+        # Populate folder tree
+        folder_data = self.db_manager.get_image_structure()
+        self.folder_tree.populate_tree(folder_data)
 
     def hideEvent(self, event):
         """Handle widget being hidden."""        
         super().hideEvent(event)
         # Optional: Clear the info when hidden to ensure fresh load next time
         self.info_label.setText("No faces loaded")
+
+    def _select_all_folders(self):
+        """Select all folders in the tree."""        
+        self.folder_tree.select_all()
+
+    def _deselect_all_folders(self):
+        """Deselect all folders in the tree."""        
+        self.folder_tree.deselect_all()
+
+    def _on_folder_selection_changed(self, selected_folders):
+        """Handle folder selection changes."""        
+        self.selected_folders = selected_folders
+        # Update info if needed
+        self.update_info()
