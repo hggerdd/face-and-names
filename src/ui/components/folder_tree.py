@@ -50,13 +50,14 @@ class FolderTreeWidget(QTreeWidget):
             for i in range(item.childCount()):
                 item.child(i).setCheckState(0, item.checkState(0))
                 
-        # Synchronize parent item
+        # Synchronize parent item based on children states
         parent = item.parent()
         if parent:
-            parent_state = Qt.CheckState.Checked
+            # If any child is checked, keep parent checked
+            parent_state = Qt.CheckState.Unchecked
             for i in range(parent.childCount()):
-                if parent.child(i).checkState(0) != Qt.CheckState.Checked:
-                    parent_state = Qt.CheckState.PartiallyChecked
+                if parent.child(i).checkState(0) == Qt.CheckState.Checked:
+                    parent_state = Qt.CheckState.Checked
                     break
             parent.setCheckState(0, parent_state)
             

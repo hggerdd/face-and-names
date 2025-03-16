@@ -357,7 +357,11 @@ class ClusteringWidget(QWidget):
         pass  # No longer automatically loads data
 
     def start_clustering(self):
-        """Start the clustering process."""        
+        """Start the clustering process."""
+        if not self.selected_folders:
+            self.clustering_error("Please select at least one folder to cluster")
+            return
+            
         self.start_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.progress_bar.setValue(0)
@@ -366,12 +370,12 @@ class ClusteringWidget(QWidget):
         try:
             face_count = len(self.db_manager.get_faces_for_clustering(
                 latest_import_only=self.latest_import_checkbox.isChecked(),
-                selected_folders=self.selected_folders if self.selected_folders else None
+                selected_folders=self.selected_folders
             ))
             if face_count == 0:
-                self.clustering_error("No faces found for clustering")
+                self.clustering_error("No faces found for clustering in selected folders")
                 return
-            self.info_label.setText(f"Found {face_count} faces in database ready for clustering")
+            self.info_label.setText(f"Found {face_count} faces in selected folders ready for clustering")
             self.status_label.setText("Initializing clustering...")
         except Exception as e:
             self.clustering_error(f"Error loading faces: {str(e)}")
