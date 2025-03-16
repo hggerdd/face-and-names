@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                             QLabel, QProgressBar, QComboBox, QSpinBox, 
-                            QDoubleSpinBox, QGroupBox, QGridLayout, QMessageBox)
+                            QDoubleSpinBox, QGroupBox, QGridLayout, QMessageBox, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 import logging
 from pathlib import Path
@@ -12,12 +12,13 @@ class ClusteringWorker(QThread):
     finished = pyqtSignal(object)  # ClusteringResult
     error = pyqtSignal(str)
 
-    def __init__(self, db_manager, algorithm, params, model_type):
+    def __init__(self, db_manager, algorithm, params, model_type, latest_import_only=False):
         super().__init__()
         self.db_manager = db_manager
         self.algorithm = algorithm
         self.params = params
         self.model_type = model_type
+        self.latest_import_only = latest_import_only
         self._clusterer = None  # Initialize later
         self._is_running = True
 
@@ -36,11 +37,16 @@ class ClusteringWorker(QThread):
 
     def run(self):
         try:
+            # Clear existing cluster assignments if using latest import
+            if self.latest_import_only:
+                self.progress.emit("Clearing existing cluster assignments...", 0)
+                self.db_manager.clear_cluster_assignments()
+
             # Load faces from database
             if not self._is_running:
                 return
             self.progress.emit("Loading faces from database...", 0)
-            faces = self.db_manager.get_faces_for_clustering()
+            faces = self.db_manager.get_faces_for_clustering(latest_import_only=self.latest_import_only)
             if not faces:
                 self.error.emit("No faces found for clustering")
                 return
@@ -135,6 +141,11 @@ class ClusteringWidget(QWidget):
         info_layout = QVBoxLayout(info_group)
         self.info_label = QLabel("No faces loaded")
         info_layout.addWidget(self.info_label)
+        
+        # Add Latest Import Only checkbox
+        self.latest_import_checkbox = QCheckBox("Latest Import Only")
+        self.latest_import_checkbox.setToolTip("Only cluster faces from the most recent import")
+        info_layout.addWidget(self.latest_import_checkbox)
         
         # Add delete all names button
         self.delete_names_button = QPushButton("Delete All Names")
@@ -328,8 +339,9 @@ class ClusteringWidget(QWidget):
         algorithm = self.algo_combo.currentData()
         params = self.get_current_params()
         model_type = self.model_combo.currentData()
+        latest_import_only = self.latest_import_checkbox.isChecked()
 
-        self.worker = ClusteringWorker(self.db_manager, algorithm, params, model_type)
+        self.worker = ClusteringWorker(self.db_manager, algorithm, params, model_type, latest_import_only)
         self.worker.progress.connect(self.update_progress)
         self.worker.stats.connect(self.update_stats)
         self.worker.finished.connect(self.clustering_finished)

@@ -204,20 +204,43 @@ class DatabaseManager:
             logging.error(f"Error getting faces: {e}")
             return []
 
-    def get_faces_for_clustering(self) -> List[Tuple[int, bytes]]:
-        """Get faces without names for clustering."""
+    def get_faces_for_clustering(self, latest_import_only: bool = False) -> List[Tuple[int, bytes]]:
+        """Get faces without names for clustering.
+        Args:
+            latest_import_only: If True, only return faces from the latest import
+        """
         try:
+            query_parts = []
+            params = []
+            
+            if latest_import_only:
+                # First get the latest import_id
+                with self.get_connection() as (_, cursor):
+                    cursor.execute('SELECT MAX(import_id) FROM imports')
+                    latest_import = cursor.fetchone()[0]
+                    if latest_import is not None:
+                        query_parts.append("i.import_id = ?")
+                        params.append(latest_import)
+
+            base_query = '''
+                SELECT f.id, f.face_image 
+                FROM faces f
+                JOIN images i ON f.image_id = i.image_id
+                WHERE (f.name IS NULL OR f.name = '')
+                AND f.face_image IS NOT NULL
+            '''
+            
+            if query_parts:
+                base_query += " AND " + " AND ".join(query_parts)
+                
+            base_query += " ORDER BY f.id"
+            
             with self.get_connection() as (_, cursor):
-                cursor.execute('''
-                    SELECT id, face_image
-                    FROM faces 
-                    WHERE face_image IS NOT NULL
-                    AND (name IS NULL OR name = '')
-                    ORDER BY id
-                ''')
+                cursor.execute(base_query, params)
                 faces = cursor.fetchall()
-                logging.info(f"Found {len(faces)} faces for clustering")
+                logging.info(f"Retrieved {len(faces)} faces for clustering{' (latest import only)' if latest_import_only else ''}")
                 return faces
+                
         except Exception as e:
             logging.error(f"Error getting faces for clustering: {e}")
             return []
@@ -915,4 +938,14 @@ class DatabaseManager:
                 return True
         except Exception as e:
             logging.error(f"Error saving prediction result: {e}")
+            return False
+
+    def clear_cluster_assignments(self) -> bool:
+        """Clear all cluster assignments from faces."""
+        try:
+            with self.transaction() as cursor:
+                cursor.execute('UPDATE faces SET cluster_id = NULL')
+            return True
+        except Exception as e:
+            logging.error(f"Error clearing cluster assignments: {e}")
             return False
