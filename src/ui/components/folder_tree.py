@@ -12,12 +12,15 @@ class FolderTreeWidget(QTreeWidget):
         self.setHeaderLabel("Folders")
         self.itemChanged.connect(self._on_item_changed)
         self.setColumnCount(1)
+        # Block signals during initial population
+        self._populating = False
         
     def populate_tree(self, folder_data):
         """Populate tree with folder structure.
         Args:
             folder_data: List of (base_folder, sub_folder, filename) tuples
         """
+        self._populating = True
         self.clear()
         folders = {}
         
@@ -41,27 +44,24 @@ class FolderTreeWidget(QTreeWidget):
                 base_dict["subs"][sub_folder] = sub_item
                 
         self.expandToDepth(0)
+        self._populating = False
         self._emit_selected_folders()
     
     def _on_item_changed(self, item, column):
         """Handle checkbox state changes."""
-        # Synchronize child items
+        if self._populating:
+            return
+
+        # If parent item was clicked, update all children
         if item.childCount() > 0:
             for i in range(item.childCount()):
-                item.child(i).setCheckState(0, item.checkState(0))
-                
-        # Synchronize parent item based on children states
-        parent = item.parent()
-        if parent:
-            # If any child is checked, keep parent checked
-            parent_state = Qt.CheckState.Unchecked
-            for i in range(parent.childCount()):
-                if parent.child(i).checkState(0) == Qt.CheckState.Checked:
-                    parent_state = Qt.CheckState.Checked
-                    break
-            parent.setCheckState(0, parent_state)
-            
-        self._emit_selected_folders()
+                child = item.child(i)
+                if child.checkState(0) != item.checkState(0):
+                    child.setCheckState(0, item.checkState(0))
+        
+        # Only emit changes if we're not populating the tree
+        if not self._populating:
+            self._emit_selected_folders()
     
     def _emit_selected_folders(self):
         """Emit list of selected folders."""
@@ -80,11 +80,17 @@ class FolderTreeWidget(QTreeWidget):
     
     def select_all(self):
         """Check all folders."""
+        self._populating = True
         self._set_all_check_states(Qt.CheckState.Checked)
+        self._populating = False
+        self._emit_selected_folders()
         
     def deselect_all(self):
         """Uncheck all folders."""
+        self._populating = True
         self._set_all_check_states(Qt.CheckState.Unchecked)
+        self._populating = False
+        self._emit_selected_folders()
         
     def _set_all_check_states(self, state):
         """Set check state for all items."""
@@ -93,4 +99,3 @@ class FolderTreeWidget(QTreeWidget):
             base_item.setCheckState(0, state)
             for j in range(base_item.childCount()):
                 base_item.child(j).setCheckState(0, state)
-        self._emit_selected_folders()
