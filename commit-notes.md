@@ -35,3 +35,9 @@ This refactor keeps the heavy DB logic isolated behind small services and gives 
 
 - **Robust path handling**  
   - `_get_image_location` accepts the import root to compute `(base_folder, sub_folder, filename)` reliably, even for flat folder structures, and README documents the expected layout. Tests cover the new behavior.
+
+## Feature Summary – `platform-fixes`
+
+- Explicitly added `torch>=2.3.0` to `pyproject.toml` so environments that rely on `uv`/PEP 517 tooling install PyTorch instead of inheriting it transitively from `facenet-pytorch`.
+- Introduced `src/utils/platform.py` with `open_file` / `open_folder` helpers and updated `NameImageViewer` to call them; Windows/macOS/Linux now open files/folders via the right command instead of hard-coded `os.startfile`.
+- Added `tests/test_regressions.py`, a headless smoke test that spins up `DatabaseManager` to ensure schema creation still succeeds even without UI dependencies (external libs are stubbed just like in `tests/test_db_services.py`).

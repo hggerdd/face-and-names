@@ -4,9 +4,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QImage
 import logging
 from pathlib import Path
-import os
 from .prediction_review_widget import ReviewGridWidget, FaceGridItem  # Add this import
 from .components.face_image_widget import FaceImageWidget
+from ..utils.platform import open_file, open_folder
 
 class NameImageViewer(QWidget):
     def __init__(self, db_manager):
@@ -88,9 +88,9 @@ class NameImageViewer(QWidget):
                 
                 action = menu.exec(self.sender().mapToGlobal(pos))
                 if action == open_action:
-                    os.startfile(str(image_path))
+                    open_file(image_path)
                 elif action == open_folder_action:
-                    os.startfile(str(image_path.parent))
+                    open_folder(image_path.parent)
                     
         except Exception as e:
             logging.error(f"Error in context menu: {e}")
