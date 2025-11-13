@@ -21,6 +21,65 @@ if "cv2" not in sys.modules:
         resize=lambda image, size, interpolation=None: image,
     )
 
+if "numpy" not in sys.modules:
+    sys.modules["numpy"] = types.SimpleNamespace(
+        ndarray=list,
+        array=lambda *args, **kwargs: args[0] if args else [],
+        zeros=lambda *args, **kwargs: 0,
+        mean=lambda *args, **kwargs: 0,
+        all=lambda *args, **kwargs: False,
+        dot=lambda *args, **kwargs: 0,
+        linalg=types.SimpleNamespace(norm=lambda *args, **kwargs: 1),
+        clip=lambda *args, **kwargs: 0,
+    )
+
+if "PIL" not in sys.modules:
+    pil_module = types.ModuleType("PIL")
+    sys.modules["PIL"] = pil_module
+
+if "PIL.Image" not in sys.modules:
+    class _ImageStub:
+        def __init__(self, *args, **kwargs):
+            self.mode = "RGB"
+
+        def rotate(self, *args, **kwargs):
+            return self
+
+        def convert(self, *args, **kwargs):
+            return self
+
+        def resize(self, *args, **kwargs):
+            return self
+
+        def save(self, *args, **kwargs):
+            return None
+
+    image_module = types.ModuleType("PIL.Image")
+    image_module.open = lambda *args, **kwargs: _ImageStub()
+    sys.modules["PIL.Image"] = image_module
+
+if "PIL.ExifTags" not in sys.modules:
+    sys.modules["PIL.ExifTags"] = types.ModuleType("PIL.ExifTags")
+    sys.modules["PIL.ExifTags"].TAGS = {}
+    sys.modules["PIL.ExifTags"].GPSTAGS = {}
+
+if "PIL.ImageOps" not in sys.modules:
+    sys.modules["PIL.ImageOps"] = types.ModuleType("PIL.ImageOps")
+    sys.modules["PIL.ImageOps"].grayscale = lambda img: img
+
+if "PIL.ImageEnhance" not in sys.modules:
+    enhancer_module = types.ModuleType("PIL.ImageEnhance")
+
+    class _Brightness:
+        def __init__(self, image):
+            self._image = image
+
+        def enhance(self, _factor):
+            return self._image
+
+    enhancer_module.Brightness = _Brightness
+    sys.modules["PIL.ImageEnhance"] = enhancer_module
+
 
 from src.core.database import DatabaseManager  # noqa  E402
 
