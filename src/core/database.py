@@ -13,49 +13,36 @@ else:
 
 import cv2
 import numpy as np
+
+from .db import DatabaseContext, ImportService, MetadataService, FaceWriteService
 from ..utils.image_utils import create_thumbnail
 
 class DatabaseManager:
     """Manages database operations for the face recognition system."""
-    
+
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        self._context = DatabaseContext(db_path)
+        self.imports = ImportService(self._context)
+        self.metadata = MetadataService(self._context)
+        self.face_writer = FaceWriteService(
+            self._context,
+            self.get_or_create_image_id,
+            self._get_image_location,
+        )
         self.initialize_database()
-        
+
     @contextmanager
     def get_connection(self) -> Generator[tuple[sqlite3.Connection, sqlite3.Cursor], None, None]:
         """Context manager for database connections."""
-        conn = None
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.execute('PRAGMA foreign_keys = ON')  # Enable foreign key support
-            cursor = conn.cursor()
+        with self._context.get_connection() as (conn, cursor):
             yield conn, cursor
-        except Exception as e:
-            if conn:
-                conn.rollback()
-            raise
-        finally:
-            if conn:
-                conn.close()
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Cursor, None, None]:
-        """Context manager for database transactions.
-        
-        Usage:
-            with self.transaction() as cursor:
-                cursor.execute(...)
-
-                # Auto-commits if no exception, rolls back if exception occurs
-        """
-        with self.get_connection() as (conn, cursor):
-            try:
-                yield cursor
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
+        """Context manager for database transactions."""
+        with self._context.transaction() as cursor:
+            yield cursor
 
     def _get_image_location(self, image_path: Path) -> tuple[str, str, str]:
         """Extract standardized location components from an image path."""
@@ -129,76 +116,11 @@ class DatabaseManager:
 
     def save_faces(self, faces: List[DetectedFace]) -> bool:
         """Save detected faces without storing predictions."""
-        return self._save_detected_faces(faces, include_predictions=False)
+        return self.face_writer.save_faces(faces, include_predictions=False)
 
     def save_faces_with_predictions(self, faces: List[DetectedFace]) -> bool:
         """Save detected faces including prediction metadata."""
-        return self._save_detected_faces(faces, include_predictions=True)
-
-    def _save_detected_faces(self, faces: List[DetectedFace], include_predictions: bool) -> bool:
-        """Persist detected faces to the database."""
-        if not faces:
-            return False
-
-        try:
-            with self.transaction() as cursor:
-                for face in faces:
-                    try:
-                        image_id = self.get_or_create_image_id(face.original_file)
-                        if image_id is None:
-                            continue
-
-                        _, img_encoded = cv2.imencode('.jpg', face.face_image)
-                        if img_encoded is None:
-                            logging.error("Failed to encode face image")
-                            continue
-
-                        img_bytes = img_encoded.tobytes()
-                        predicted_name = getattr(face, 'predicted_name', None) if include_predictions else None
-                        prediction_confidence = getattr(face, 'prediction_confidence', None) if include_predictions else None
-
-                        cursor.execute(
-                            '''
-                            INSERT INTO faces (
-                                image_id,
-                                face_image,
-                                predicted_name,
-                                prediction_confidence,
-                                bbox_x,
-                                bbox_y,
-                                bbox_w,
-                                bbox_h
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            ''',
-                            (
-                                image_id,
-                                img_bytes,
-                                predicted_name,
-                                prediction_confidence,
-                                face.bbox_relative[0],
-                                face.bbox_relative[1],
-                                face.bbox_relative[2],
-                                face.bbox_relative[3],
-                            ),
-                        )
-
-                        cursor.execute(
-                            '''
-                            UPDATE images SET has_faces = TRUE
-                            WHERE image_id = ?
-                            ''',
-                            (image_id,),
-                        )
-
-                    except Exception as e:
-                        logging.error(f"Error saving face: {e}")
-                        continue
-
-                return True
-
-        except Exception as e:
-            logging.error(f"Error saving faces: {e}")
-            return False
+        return self.face_writer.save_faces_with_predictions(faces)
 
     def get_faces_query(self, conditions: str = "", params: tuple = ()) -> List[tuple]:
         """Generic method for retrieving faces with specified conditions."""
@@ -445,23 +367,7 @@ class DatabaseManager:
 
     def save_image_metadata(self, image_id: int, metadata: dict) -> bool:
         """Save image metadata to database."""
-        try:
-            with self.transaction() as cursor:
-                # Clear existing metadata for this image
-                cursor.execute('DELETE FROM image_metadata WHERE image_id = ?', (image_id,))
-                
-                # Insert new metadata
-                cursor.executemany(
-                    '''INSERT INTO image_metadata (image_id, meta_key, meta_type, meta_value)
-                       VALUES (?, ?, ?, ?)''',
-                    [(image_id, key, value_type, str(value)) 
-                     for key, (value_type, value) in metadata.items()]
-                )
-                return True
-                
-        except Exception as e:
-            logging.error(f"Error saving metadata: {e}")
-            return False
+        return self.metadata.save_image_metadata(image_id, metadata)
 
     def get_database_statistics(self) -> dict:
         """Get various statistics about the database."""
@@ -627,49 +533,13 @@ class DatabaseManager:
             
             logging.info("Database initialized successfully")
 
-    def start_new_import(self, folder_count: int) -> int:
-        """Start a new import session and return its ID.
-        
-        Args:
-            folder_count: Number of folders being processed
-            
-        Returns:
-            int: The new import ID
-        """
-        try:
-            with self.transaction() as cursor:
-                cursor.execute('''
-                    INSERT INTO imports (folder_count, image_count)
-                    VALUES (?, 0)
-                ''', (folder_count,))
-                import_id = cursor.lastrowid
-                logging.info(f"Started new import session with ID: {import_id}")
-                return import_id
-        except Exception as e:
-            logging.error(f"Error starting new import: {e}")
-            return None
+    def start_new_import(self, folder_count: int) -> int | None:
+        """Start a new import session and return its ID."""
+        return self.imports.start_new_import(folder_count)
 
     def update_import_image_count(self, import_id: int, image_count: int) -> bool:
-        """Update the image count for an import session.
-        
-        Args:
-            import_id: The import session ID
-            image_count: Total number of images processed
-            
-        Returns:
-            bool: True if successful
-        """
-        try:
-            with self.transaction() as cursor:
-                cursor.execute('''
-                    UPDATE imports 
-                    SET image_count = ?
-                    WHERE import_id = ?
-                ''', (image_count, import_id))
-                return True
-        except Exception as e:
-            logging.error(f"Error updating import image count: {e}")
-            return False
+        """Update the image count for an import session."""
+        return self.imports.update_image_count(import_id, image_count)
 
     def get_image_data(self, image_id: int) -> Optional[bytes]:
         """Get full image data from thumbnails table"""
@@ -827,27 +697,7 @@ class DatabaseManager:
 
     def add_face_annotation(self, image_id: int, name: str, bbox: Tuple[float, float, float, float]) -> bool:
         """Insert a manually drawn face bounding box."""
-        try:
-            with self.transaction() as cursor:
-                cursor.execute(
-                    '''
-                    INSERT INTO faces (image_id, name, bbox_x, bbox_y, bbox_w, bbox_h)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ''',
-                    (image_id, name, *bbox),
-                )
-                cursor.execute(
-                    '''
-                    UPDATE images SET has_faces = TRUE
-                    WHERE image_id = ?
-                    ''',
-                    (image_id,),
-                )
-            logging.info(f"Added manual face annotation for image {image_id}")
-            return True
-        except Exception as e:
-            logging.error(f"Error adding face annotation: {e}")
-            return False
+        return self.face_writer.add_face_annotation(image_id, name, bbox)
 
     def get_image_path(self, image_id: int) -> Optional[Tuple[str, str, str]]:
         """Return (base_folder, sub_folder, filename) for an image."""
@@ -925,21 +775,7 @@ class DatabaseManager:
 
     def record_no_face_image(self, image_path: Path) -> bool:
         """Record an image that contains no faces."""
-        try:
-            with self.transaction() as cursor:
-                image_id = self.get_or_create_image_id(image_path)
-                if image_id is None:
-                    return False
-                    
-                cursor.execute('''
-                    UPDATE images 
-                    SET has_faces = FALSE
-                    WHERE image_id = ?
-                ''', (image_id,))
-                return True
-        except Exception as e:
-            logging.error(f"Error recording no-face image: {e}")
-            return False
+        return self.face_writer.record_no_face_image(image_path)
 
     def get_thumbnail(self, image_id: int) -> Optional[bytes]:
         """Retrieve thumbnail for an image."""

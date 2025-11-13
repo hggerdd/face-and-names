@@ -13,3 +13,14 @@
   - Filters refresh automatically once async loading finishes.
 
 These changes prepare the codebase for future database changes, reduce duplication, and eliminate UI freezes when reviewing predictions.
+
+## Feature Summary – `db-service-refactor`
+
+- **Database services split**  
+  - Introduced `DatabaseContext`, `ImportService`, `MetadataService`, and `FaceWriteService` under `src/core/db`.  
+  - `DatabaseManager` now composes these helpers, delegating import tracking, metadata writes, and face persistence to focused classes.
+
+- **Unit tests for write paths**  
+  - Added `tests/test_db_services.py` covering import creation, face saves (with prediction data), and metadata replacement using an in-memory SQLite DB with lightweight `cv2` stubs.
+
+This refactor keeps the heavy DB logic isolated behind small services and gives us automated safety nets for the highest-risk write operations.
