@@ -9,6 +9,7 @@ import logging
 import io
 from .components.image_tree import ImageTreeWidget
 from .shared.font_config import FontConfig
+from .shared.thumbnail_loader import ThumbnailLoadWorker
 
 class ThumbnailViewer(QWidget):
     def __init__(self, db_manager, parent=None):
@@ -26,6 +27,7 @@ class ThumbnailViewer(QWidget):
         self.origin = None
         self.current_pixmap = None
         self.pixmap_rect = None
+        self._loader = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -221,12 +223,28 @@ class ThumbnailViewer(QWidget):
             
     def show_current_image(self):
         """Display current image and its info with face bounding boxes."""
-        try:
-            details = self.db_manager.get_image_details(self.current_image_id)
-            if not details:
-                return
+        if self.current_image_id is None:
+            return
+        self.info_label.setText("Loading image...")
+        self.metadata_table.setRowCount(0)
+        self.image_label.setText("Loading...")
+        self.face_boxes = []
+        self._load_image_async(self.current_image_id)
 
-            metadata = self.db_manager.get_image_metadata_entries(self.current_image_id)
+    def _load_image_async(self, image_id: int):
+        if self._loader and self._loader.isRunning():
+            self._loader.requestInterruption()
+            self._loader.wait()
+        self._loader = ThumbnailLoadWorker(self.db_manager, image_id)
+        self._loader.loaded.connect(self._on_thumbnail_loaded)
+        self._loader.error.connect(self._on_thumbnail_error)
+        self._loader.start()
+
+    def _on_thumbnail_loaded(self, image_id: int, details: dict, metadata: list):
+        if image_id != self.current_image_id:
+            return
+
+        try:
             self.metadata_table.setRowCount(len(metadata))
             for row, (key, type_, value) in enumerate(metadata):
                 display_key = f"{type_}: {key}"
@@ -240,7 +258,7 @@ class ThumbnailViewer(QWidget):
             filename = details['filename']
             faces = details.get('faces', [])
 
-            full_path = f"{base_folder}/{sub_folder}/{filename}"
+            full_path = f"{base_folder}/{sub_folder}/{filename}".rstrip("/")
             face_count = sum(1 for face in faces if face.get('bbox') is not None)
             self.info_label.setText(
                 f"Image ID: {self.current_image_id}\n"
@@ -310,9 +328,13 @@ class ThumbnailViewer(QWidget):
             self.image_label.mousePressEvent = self.handle_image_click
             self.image_label.mouseMoveEvent = self.handle_mouse_move
             self.image_label.mouseReleaseEvent = self.handle_mouse_release
-
         except Exception as e:
-            logging.error(f"Error showing current image: {e}")
+            logging.error(f"Error rendering image: {e}")
+
+    def _on_thumbnail_error(self, image_id: int, message: str):
+        if image_id != self.current_image_id:
+            return
+        self.info_label.setText(f"Error loading image: {message}")
 
     def handle_image_click(self, event):
         """Handle mouse press events."""
@@ -487,3 +509,9 @@ class ThumbnailViewer(QWidget):
         super().resizeEvent(event)
         if self.current_image_id is not None:
             self.show_current_image()
+
+    def closeEvent(self, event):
+        if self._loader and self._loader.isRunning():
+            self._loader.requestInterruption()
+            self._loader.wait()
+        super().closeEvent(event)

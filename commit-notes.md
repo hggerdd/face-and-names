@@ -46,3 +46,9 @@ This refactor keeps the heavy DB logic isolated behind small services and gives 
 
 - Added `StartupSplash`, showing a splash window immediately after `QApplication` boots so users see feedback within 100 ms even while heavy subsystems (fonts, DB initialization) load.
 - The splash enforces a minimum display time and automatically hands off to the main window when it’s ready, improving perceived startup speed without altering the existing UI code.
+
+## Feature Summary – `async-cache`
+
+- Introduced `src/core/cache.LRUCache` and wired `DatabaseManager` to cache thumbnails/details in-memory, dramatically reducing repeat BLOB lookups.
+- Added `ThumbnailLoadWorker` plus async loading in `ThumbnailViewer`, keeping the UI responsive while large thumbnails/metadata load in background threads.
+- Created `tests/test_cache.py` to cover the cache eviction behavior; existing DB/regression tests pass with the new cache layer.

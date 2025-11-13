@@ -16,6 +16,7 @@ import numpy as np
 
 from .db import DatabaseContext, ImportService, MetadataService, FaceWriteService
 from ..utils.image_utils import create_thumbnail
+from .cache import LRUCache
 
 class DatabaseManager:
     """Manages database operations for the face recognition system."""
@@ -23,6 +24,8 @@ class DatabaseManager:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self._context = DatabaseContext(db_path)
+        self._thumbnail_cache = LRUCache[int, bytes](maxsize=256)
+        self._image_details_cache = LRUCache[int, dict](maxsize=256)
         self.imports = ImportService(self._context)
         self.metadata = MetadataService(self._context)
         self.face_writer = FaceWriteService(
@@ -31,6 +34,10 @@ class DatabaseManager:
             self._get_image_location,
         )
         self.initialize_database()
+
+    def clear_caches(self) -> None:
+        self._thumbnail_cache.clear()
+        self._image_details_cache.clear()
 
     @contextmanager
     def get_connection(self) -> Generator[tuple[sqlite3.Connection, sqlite3.Cursor], None, None]:
@@ -569,6 +576,9 @@ class DatabaseManager:
 
     def get_image_data(self, image_id: int) -> Optional[bytes]:
         """Get full image data from thumbnails table"""
+        cached = self._thumbnail_cache.get(image_id)
+        if cached:
+            return cached
         try:
             with self.get_connection() as (_, cursor):
                 cursor.execute("SELECT thumbnail FROM thumbnails WHERE image_id = ?", (image_id,))
@@ -576,6 +586,7 @@ class DatabaseManager:
                 if not result:
                     logging.warning(f"No thumbnail found for image_id {image_id}")
                     return None
+                self._thumbnail_cache.set(image_id, result[0])
                 return result[0]
         except Exception as e:
             logging.error(f"Error getting image data: {e}")
@@ -649,6 +660,9 @@ class DatabaseManager:
 
     def get_image_details(self, image_id: int) -> Optional[Dict]:
         """Retrieve thumbnail, path info, and face data for an image."""
+        cached = self._image_details_cache.get(image_id)
+        if cached:
+            return cached
         try:
             with self.get_connection() as (_, cursor):
                 cursor.execute(
@@ -692,13 +706,15 @@ class DatabaseManager:
                         }
                     )
 
-                return {
+                details = {
                     'thumbnail': thumbnail,
                     'base_folder': base_folder,
                     'sub_folder': sub_folder,
                     'filename': filename,
                     'faces': faces,
                 }
+                self._image_details_cache.set(image_id, details)
+                return details
         except Exception as e:
             logging.error(f"Error getting image details: {e}")
             return None
