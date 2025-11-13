@@ -41,3 +41,8 @@ This refactor keeps the heavy DB logic isolated behind small services and gives 
 - Explicitly added `torch>=2.3.0` to `pyproject.toml` so environments that rely on `uv`/PEP 517 tooling install PyTorch instead of inheriting it transitively from `facenet-pytorch`.
 - Introduced `src/utils/platform.py` with `open_file` / `open_folder` helpers and updated `NameImageViewer` to call them; Windows/macOS/Linux now open files/folders via the right command instead of hard-coded `os.startfile`.
 - Added `tests/test_regressions.py`, a headless smoke test that spins up `DatabaseManager` to ensure schema creation still succeeds even without UI dependencies (external libs are stubbed just like in `tests/test_db_services.py`).
+
+## Feature Summary – `splash-screen`
+
+- Added `StartupSplash`, showing a splash window immediately after `QApplication` boots so users see feedback within 100 ms even while heavy subsystems (fonts, DB initialization) load.
+- The splash enforces a minimum display time and automatically hands off to the main window when it’s ready, improving perceived startup speed without altering the existing UI code.

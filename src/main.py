@@ -11,6 +11,7 @@ if __package__ in (None, ""):
 from src.core.database import DatabaseManager
 from src.ui.main_window import MainWindow
 from src.ui.shared.font_config import FontConfig
+from src.ui.shared.splash import StartupSplash
 
 
 def setup_logging() -> None:
@@ -46,10 +47,19 @@ def main() -> int:
 
     try:
         app = QApplication(sys.argv)
+
+        splash = StartupSplash()
+        splash.show()
+        app.processEvents()
+
         FontConfig.initialize()
         logging.info("Font configuration initialized")
 
         window = _create_window()
+
+        splash.ensure_minimum_display(100)
+        splash.finish(window)
+
         window.show()
         return app.exec()
     except Exception as exc:
