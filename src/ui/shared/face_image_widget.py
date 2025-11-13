@@ -3,7 +3,6 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QImage, QFont
 from PIL import Image, ImageOps, ImageEnhance
 import io
-import sqlite3
 import logging
 from .image_utils import ImageProcessor
 from .image_preview import ImagePreviewWindow
@@ -239,15 +238,9 @@ class FaceImageWidget(QWidget):
             if hasattr(self, 'image_id') and self.image_id and self.db_manager is not None:
                 # Get bounding box if not already set, using proper connection handling
                 if not self.bbox:
-                    with self.db_manager.get_connection() as (_, cursor):
-                        cursor.execute('''
-                            SELECT bbox_x, bbox_y, bbox_w, bbox_h 
-                            FROM faces 
-                            WHERE id = ?
-                        ''', (self.face_id,))
-                        bbox_data = cursor.fetchone()
-                        if bbox_data:
-                            self.bbox = bbox_data
+                    bbox_data = self.db_manager.get_face_bbox(self.face_id)
+                    if bbox_data:
+                        self.bbox = bbox_data
                 
                 image_data = self.db_manager.get_image_data(self.image_id)
                 if image_data:

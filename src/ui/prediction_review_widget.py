@@ -4,16 +4,33 @@ from PyQt6.QtWidgets import (
     QListWidget, QSplitter, QScrollArea, QInputDialog, QFrame,
     QApplication
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTimer
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTimer, QThread
 from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QCursor, QPainter, QPen
 import cv2
 import numpy as np
 import logging
 from pathlib import Path
 import io
-import sqlite3  # Add this import
 from PIL import Image, ImageOps, ImageEnhance
 from .shared.image_preview import ImagePreviewWindow
+
+class PredictionDataLoader(QThread):
+    loaded = pyqtSignal(list, list)
+    failed = pyqtSignal(str)
+
+    def __init__(self, db_manager, parent=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+
+    def run(self):
+        try:
+            faces = self.db_manager.get_faces_with_predictions()
+            unique_names = self.db_manager.get_unique_names()
+            self.loaded.emit(faces, unique_names)
+        except Exception as e:
+            logging.error(f"Error loading prediction data: {e}", exc_info=True)
+            self.failed.emit(str(e))
+
 
 class EditableLabel(QLabel):
     nameChanged = pyqtSignal(str)  # Signal emitted when the name is edited
@@ -196,31 +213,15 @@ class FaceGridItem(QWidget):
                     pen.setWidth(3)  # Make it thicker for visibility
                     painter.setPen(pen)
 
-                    # Get the coordinates for this face directly from db_manager
-                    try:
-                        conn = sqlite3.connect(self.db_manager.db_path)
-                        cursor = conn.cursor()
-                        cursor.execute('''
-                            SELECT bbox_x, bbox_y, bbox_w, bbox_h
-                            FROM faces
-                            WHERE id = ?
-                        ''', (self.face_id,))
-                        result = cursor.fetchone()
-                        
-                        if result:
-                            rel_x, rel_y, rel_w, rel_h = result
-                            # Convert relative coordinates to actual pixels
-                            x = int(rel_x * drawing_pixmap.width())
-                            y = int(rel_y * drawing_pixmap.height())
-                            w = int(rel_w * drawing_pixmap.width())
-                            h = int(rel_h * drawing_pixmap.height())
-                            
-                            # Draw the rectangle
-                            painter.drawRect(x, y, w, h)
-                    finally:
-                        painter.end()
-                        if 'conn' in locals():
-                            conn.close()
+                    bbox = self.db_manager.get_face_bbox(self.face_id) if self.db_manager else None
+                    if bbox:
+                        rel_x, rel_y, rel_w, rel_h = bbox
+                        x = int(rel_x * drawing_pixmap.width())
+                        y = int(rel_y * drawing_pixmap.height())
+                        w = int(rel_w * drawing_pixmap.width())
+                        h = int(rel_h * drawing_pixmap.height())
+                        painter.drawRect(x, y, w, h)
+                    painter.end()
 
                     # Show preview with the drawn rectangle
                     self.preview_window.show_image(drawing_pixmap, global_pos)
@@ -341,7 +342,8 @@ class PredictionReviewWidget(QWidget):
         self._unique_names = None
         self._is_data_loaded = False
         self._last_selected_name = ""  # Store the last selected filter name
-        self._last_data_hash = None   # Store hash of last loaded data
+        self._data_loader = None
+        self._filter_controls = []
         self.setup_ui()
 
     def setup_ui(self):
@@ -417,6 +419,11 @@ class PredictionReviewWidget(QWidget):
 
             self.filter_stats = QLabel("Showing all faces")
             filter_layout.addWidget(self.filter_stats, 4, 0, 1, 2)
+
+            reload_button = QPushButton("Reload Predictions")
+            reload_button.clicked.connect(lambda: self._start_data_load(force=True))
+            filter_layout.addWidget(reload_button, 5, 0, 1, 2)
+            self.reload_button = reload_button
             
             right_layout.addWidget(filter_group)
 
@@ -445,6 +452,18 @@ class PredictionReviewWidget(QWidget):
             splitter.setSizes([200, 400])
             
             main_layout.addWidget(splitter)
+
+            self._filter_controls = [
+                self.names_list,
+                self.name_filter,
+                self.min_confidence,
+                self.max_confidence,
+                self.unnamed_check,
+                self.different_check,
+                accept_button,
+                self.reload_button,
+                self.face_grid,
+            ]
             
         except Exception as e:
             logging.error(f"Error in setup_ui: {e}")
@@ -453,75 +472,56 @@ class PredictionReviewWidget(QWidget):
     def showEvent(self, event):
         """Called when the widget becomes visible"""
         super().showEvent(event)
-        if not self._is_data_loaded or self.check_and_reload_data():
-            self.load_predictions()
-        self.status_label.setText("Ready")
+        if not self._is_data_loaded:
+            self._start_data_load(force=True)
+        else:
+            self.status_label.setText("Ready")
 
     def load_predictions(self):
-        """Load initial predictions data"""
-        try:
-            self._faces_data = self.db_manager.get_faces_with_predictions()
-            self._last_data_hash = self.calculate_data_hash(self._faces_data)
-            self._unique_names = self.db_manager.get_unique_names()
-            self._is_data_loaded = True
-            
-            logging.info(f"Loaded {len(self._faces_data)} predictions")
-            self.status_label.setText(f"Loaded {len(self._faces_data)} predictions")
-            
-            self.load_names()
-            self.apply_filters()
-        except Exception as e:
-            logging.error(f"Error loading predictions: {e}")
-            self.status_label.setText("Error loading predictions")
-            self._faces_data = []
+        """Trigger an asynchronous reload of prediction data."""
+        self._start_data_load(force=True)
 
-    def calculate_data_hash(self, faces_data):
-        """Calculate a hash of the faces data to detect changes"""
-        try:
-            # Create a string representation of relevant data
-            data_string = ''.join(
-                f"{face[0]}{face[2]}{face[3]}{face[4]}"  # face_id, name, predicted_name, confidence
-                for face in faces_data
-            )
-            return hash(data_string)
-        except Exception as e:
-            logging.error(f"Error calculating data hash: {e}")
-            return None
+    def _start_data_load(self, force: bool = False):
+        if self._data_loader and self._data_loader.isRunning():
+            return
+        if self._is_data_loaded and not force:
+            return
 
-    def check_and_reload_data(self):
-        """Check if data has changed and reload if necessary"""
-        try:
-            current_data = self.db_manager.get_faces_with_predictions()
-            current_hash = self.calculate_data_hash(current_data)
-            
-            if current_hash != self._last_data_hash:
-                logging.debug("Database content changed, reloading data")
-                self._faces_data = current_data
-                self._last_data_hash = current_hash
-                self._unique_names = self.db_manager.get_unique_names()
-                
-                # Remember current filter before reloading
-                current_filter = self.name_filter.text().strip()
-                
-                # Reload the names list
-                self.load_names()
-                
-                # Check if the previously selected name still exists
-                if current_filter and current_filter != "All":
-                    available_names = {name.lower() for name in self._unique_names if name}
-                    if current_filter.lower() not in available_names:
-                        self.name_filter.setText("")  # Reset to show all
-                        logging.debug(f"Previously selected name '{current_filter}' no longer exists")
-                    else:
-                        self.name_filter.setText(current_filter)  # Restore filter
-                        
-                # Apply filters to update the view
-                self.apply_filters()
-                return True
-            return False
-        except Exception as e:
-            logging.error(f"Error checking for data changes: {e}")
-            return False
+        self.status_label.setText("Loading predictions...")
+        self._set_filter_controls_enabled(False)
+
+        self._data_loader = PredictionDataLoader(self.db_manager)
+        self._data_loader.loaded.connect(self._on_data_loaded)
+        self._data_loader.failed.connect(self._on_data_load_failed)
+        self._data_loader.start()
+
+    def _on_data_loaded(self, faces_data, unique_names):
+        self._faces_data = faces_data
+        self._unique_names = unique_names
+        self._is_data_loaded = True
+
+        logging.info(f"Loaded {len(self._faces_data)} predictions")
+        self.status_label.setText(f"Loaded {len(self._faces_data)} predictions")
+
+        self.load_names()
+        self.apply_filters()
+        self._set_filter_controls_enabled(True)
+
+        if self._data_loader:
+            self._data_loader.deleteLater()
+            self._data_loader = None
+
+    def _on_data_load_failed(self, message: str):
+        logging.error(f"Failed to load prediction data: {message}")
+        self.status_label.setText(f"Error loading predictions: {message}")
+        self._set_filter_controls_enabled(True)
+        if self._data_loader:
+            self._data_loader.deleteLater()
+            self._data_loader = None
+
+    def _set_filter_controls_enabled(self, enabled: bool):
+        for widget in self._filter_controls:
+            widget.setEnabled(enabled)
 
     def load_names(self):
         try:

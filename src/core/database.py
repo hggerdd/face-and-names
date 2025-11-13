@@ -2,11 +2,17 @@ from contextlib import contextmanager
 import sqlite3
 from pathlib import Path
 import logging
-from typing import List, Tuple, Optional, Generator
-from .face_detector import DetectedFace
+from typing import List, Tuple, Optional, Generator, Dict, TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .face_detector import DetectedFace
+    from .face_clusterer import ClusteringResult
+else:
+    DetectedFace = Any
+    ClusteringResult = Any
+
 import cv2
 import numpy as np
-from .face_clusterer import ClusteringResult
 from ..utils.image_utils import create_thumbnail
 
 class DatabaseManager:
@@ -121,11 +127,19 @@ class DatabaseManager:
             logging.error(f"Error in get_or_create_image_id: {e}")
             return None
 
+    def save_faces(self, faces: List[DetectedFace]) -> bool:
+        """Save detected faces without storing predictions."""
+        return self._save_detected_faces(faces, include_predictions=False)
+
     def save_faces_with_predictions(self, faces: List[DetectedFace]) -> bool:
-        """Save detected faces to database with predictions and bounding boxes."""
+        """Save detected faces including prediction metadata."""
+        return self._save_detected_faces(faces, include_predictions=True)
+
+    def _save_detected_faces(self, faces: List[DetectedFace], include_predictions: bool) -> bool:
+        """Persist detected faces to the database."""
         if not faces:
             return False
-            
+
         try:
             with self.transaction() as cursor:
                 for face in faces:
@@ -133,18 +147,20 @@ class DatabaseManager:
                         image_id = self.get_or_create_image_id(face.original_file)
                         if image_id is None:
                             continue
-                            
-                        # Convert face image to bytes
+
                         _, img_encoded = cv2.imencode('.jpg', face.face_image)
                         if img_encoded is None:
                             logging.error("Failed to encode face image")
                             continue
-                            
+
                         img_bytes = img_encoded.tobytes()
-                        
-                        cursor.execute('''
+                        predicted_name = getattr(face, 'predicted_name', None) if include_predictions else None
+                        prediction_confidence = getattr(face, 'prediction_confidence', None) if include_predictions else None
+
+                        cursor.execute(
+                            '''
                             INSERT INTO faces (
-                                image_id, 
+                                image_id,
                                 face_image,
                                 predicted_name,
                                 prediction_confidence,
@@ -153,31 +169,35 @@ class DatabaseManager:
                                 bbox_w,
                                 bbox_h
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
-                            image_id,
-                            img_bytes,
-                            getattr(face, 'predicted_name', None),
-                            getattr(face, 'prediction_confidence', None),
-                            face.bbox_relative[0],
-                            face.bbox_relative[1],
-                            face.bbox_relative[2],
-                            face.bbox_relative[3]
-                        ))
-                        
-                        # Update has_faces flag
-                        cursor.execute('''
+                            ''',
+                            (
+                                image_id,
+                                img_bytes,
+                                predicted_name,
+                                prediction_confidence,
+                                face.bbox_relative[0],
+                                face.bbox_relative[1],
+                                face.bbox_relative[2],
+                                face.bbox_relative[3],
+                            ),
+                        )
+
+                        cursor.execute(
+                            '''
                             UPDATE images SET has_faces = TRUE
                             WHERE image_id = ?
-                        ''', (image_id,))
-                        
+                            ''',
+                            (image_id,),
+                        )
+
                     except Exception as e:
                         logging.error(f"Error saving face: {e}")
                         continue
-                        
+
                 return True
-                
+
         except Exception as e:
-            logging.error(f"Error in save_faces_with_predictions: {e}")
+            logging.error(f"Error saving faces: {e}")
             return False
 
     def get_faces_query(self, conditions: str = "", params: tuple = ()) -> List[tuple]:
@@ -393,6 +413,18 @@ class DatabaseManager:
                 
         except Exception as e:
             logging.error(f"Error updating person name: {e}")
+            return False
+
+    def clear_all_names(self) -> bool:
+        """Clear all manually assigned names and associated clusters."""
+        try:
+            with self.transaction() as cursor:
+                cursor.execute('UPDATE faces SET name = NULL')
+                cursor.execute('UPDATE faces SET cluster_id = NULL')
+            logging.info("Cleared all face names and cluster assignments")
+            return True
+        except Exception as e:
+            logging.error(f"Error clearing all names: {e}")
             return False
 
     def clear_predictions_only(self) -> bool:
@@ -690,12 +722,196 @@ class DatabaseManager:
             logging.error(f"Error getting images in folder: {e}")
             return []
 
-    def get_faces_by_name(self, name: str) -> List[Tuple[int, bytes, int]]:
-        """Get all faces for a given name, returning (face_id, face_image, image_id)."""
+    def get_image_id_by_path(self, base_folder: str, sub_folder: str, filename: str) -> Optional[int]:
+        """Look up image_id using its stored path components."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute(
+                    '''
+                    SELECT image_id
+                    FROM images
+                    WHERE base_folder = ? AND sub_folder = ? AND filename = ?
+                    ''',
+                    (base_folder, sub_folder, filename),
+                )
+                result = cursor.fetchone()
+                return result[0] if result else None
+        except Exception as e:
+            logging.error(f"Error getting image by path: {e}")
+            return None
+
+    def get_first_thumbnail_image_id(self) -> Optional[int]:
+        """Return the first available image_id from thumbnails."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute('SELECT MIN(image_id) FROM thumbnails')
+                result = cursor.fetchone()
+                return result[0] if result and result[0] is not None else None
+        except Exception as e:
+            logging.error(f"Error getting first thumbnail image_id: {e}")
+            return None
+
+    def get_image_details(self, image_id: int) -> Optional[Dict]:
+        """Retrieve thumbnail, path info, and face data for an image."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute(
+                    '''
+                    SELECT t.thumbnail,
+                           i.base_folder,
+                           i.sub_folder,
+                           i.filename,
+                           f.id,
+                           f.name,
+                           f.predicted_name,
+                           f.bbox_x,
+                           f.bbox_y,
+                           f.bbox_w,
+                           f.bbox_h,
+                           f.prediction_confidence
+                    FROM thumbnails t
+                    JOIN images i ON t.image_id = i.image_id
+                    LEFT JOIN faces f ON i.image_id = f.image_id
+                    WHERE t.image_id = ?
+                    ''',
+                    (image_id,),
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+
+                thumbnail, base_folder, sub_folder, filename = rows[0][:4]
+                faces = []
+                for row in rows:
+                    face_id = row[4]
+                    if face_id is None:
+                        continue
+                    faces.append(
+                        {
+                            'face_id': face_id,
+                            'name': row[5],
+                            'predicted_name': row[6],
+                            'bbox': (row[7], row[8], row[9], row[10]) if row[7] is not None else None,
+                            'prediction_confidence': row[11],
+                        }
+                    )
+
+                return {
+                    'thumbnail': thumbnail,
+                    'base_folder': base_folder,
+                    'sub_folder': sub_folder,
+                    'filename': filename,
+                    'faces': faces,
+                }
+        except Exception as e:
+            logging.error(f"Error getting image details: {e}")
+            return None
+
+    def get_image_metadata_entries(self, image_id: int) -> List[Tuple[str, str, str]]:
+        """Retrieve metadata rows for an image."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute(
+                    '''
+                    SELECT meta_key, meta_type, meta_value
+                    FROM image_metadata
+                    WHERE image_id = ?
+                    ORDER BY meta_key
+                    ''',
+                    (image_id,),
+                )
+                return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"Error getting image metadata: {e}")
+            return []
+
+    def add_face_annotation(self, image_id: int, name: str, bbox: Tuple[float, float, float, float]) -> bool:
+        """Insert a manually drawn face bounding box."""
+        try:
+            with self.transaction() as cursor:
+                cursor.execute(
+                    '''
+                    INSERT INTO faces (image_id, name, bbox_x, bbox_y, bbox_w, bbox_h)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ''',
+                    (image_id, name, *bbox),
+                )
+                cursor.execute(
+                    '''
+                    UPDATE images SET has_faces = TRUE
+                    WHERE image_id = ?
+                    ''',
+                    (image_id,),
+                )
+            logging.info(f"Added manual face annotation for image {image_id}")
+            return True
+        except Exception as e:
+            logging.error(f"Error adding face annotation: {e}")
+            return False
+
+    def get_image_path(self, image_id: int) -> Optional[Tuple[str, str, str]]:
+        """Return (base_folder, sub_folder, filename) for an image."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute(
+                    '''
+                    SELECT base_folder, sub_folder, filename
+                    FROM images
+                    WHERE image_id = ?
+                    ''',
+                    (image_id,),
+                )
+                row = cursor.fetchone()
+                return row if row else None
+        except Exception as e:
+            logging.error(f"Error getting image path: {e}")
+            return None
+
+    def get_image_path_for_face(self, face_id: int) -> Optional[Tuple[str, str, str]]:
+        """Return the image path components for a given face."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute(
+                    '''
+                    SELECT i.base_folder, i.sub_folder, i.filename
+                    FROM faces f
+                    JOIN images i ON f.image_id = i.image_id
+                    WHERE f.id = ?
+                    ''',
+                    (face_id,),
+                )
+                row = cursor.fetchone()
+                return row if row else None
+        except Exception as e:
+            logging.error(f"Error getting face image path: {e}")
+            return None
+
+    def get_face_bbox(self, face_id: int) -> Optional[Tuple[float, float, float, float]]:
+        """Return stored bounding box coordinates for a face."""
+        try:
+            with self.get_connection() as (_, cursor):
+                cursor.execute(
+                    '''
+                    SELECT bbox_x, bbox_y, bbox_w, bbox_h
+                    FROM faces
+                    WHERE id = ?
+                    ''',
+                    (face_id,),
+                )
+                row = cursor.fetchone()
+                if row and row[0] is not None:
+                    return row
+                return None
+        except Exception as e:
+            logging.error(f"Error getting face bbox: {e}")
+            return None
+
+    def get_faces_by_name(self, name: str) -> List[Tuple[int, bytes, str, str, float, int]]:
+        """Get faces for a given name including prediction metadata."""
         try:
             with self.get_connection() as (_, cursor):
                 cursor.execute('''
-                    SELECT id, face_image, image_id
+                    SELECT id, face_image, name, predicted_name, prediction_confidence, image_id
                     FROM faces 
                     WHERE name = ? AND face_image IS NOT NULL
                     ORDER BY id

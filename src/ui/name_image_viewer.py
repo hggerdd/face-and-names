@@ -5,7 +5,6 @@ from PyQt6.QtGui import QPixmap, QImage
 import logging
 from pathlib import Path
 import os
-import sqlite3
 from .prediction_review_widget import ReviewGridWidget, FaceGridItem  # Add this import
 from .components.face_image_widget import FaceImageWidget
 
@@ -49,18 +48,7 @@ class NameImageViewer(QWidget):
     def load_images_for_name(self, item):
         try:
             name = item.text()
-            conn = sqlite3.connect(self.db_manager.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT f.id, f.face_image, f.name, f.predicted_name, f.prediction_confidence, i.image_id
-                FROM faces f
-                JOIN images i ON f.image_id = i.image_id
-                WHERE f.name = ?
-                ORDER BY i.image_id
-            ''', (name,))
-            
-            faces_data = cursor.fetchall()
+            faces_data = self.db_manager.get_faces_by_name(name)
             self.face_grid.load_faces(faces_data)
 
             # Set up deletion handler for the grid
@@ -71,9 +59,6 @@ class NameImageViewer(QWidget):
 
         except Exception as e:
             logging.error(f"Error loading images for name: {e}")
-        finally:
-            if 'conn' in locals():
-                conn.close()
 
     def on_face_deleted(self, face_id):
         try:
@@ -92,18 +77,7 @@ class NameImageViewer(QWidget):
 
     def show_context_menu(self, pos, face_id):
         try:
-            conn = sqlite3.connect(self.db_manager.db_path)
-            cursor = conn.cursor()
-            
-            # Get image path for this face
-            cursor.execute('''
-                SELECT i.base_folder, i.sub_folder, i.filename
-                FROM faces f
-                JOIN images i ON f.image_id = i.image_id
-                WHERE f.id = ?
-            ''', (face_id,))
-            
-            result = cursor.fetchone()
+            result = self.db_manager.get_image_path_for_face(face_id)
             if result:
                 base_folder, sub_folder, filename = result
                 image_path = Path(base_folder) / sub_folder / filename
@@ -120,6 +94,3 @@ class NameImageViewer(QWidget):
                     
         except Exception as e:
             logging.error(f"Error in context menu: {e}")
-        finally:
-            if 'conn' in locals():
-                conn.close()
