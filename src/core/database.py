@@ -959,3 +959,72 @@ class DatabaseManager:
         except Exception as e:
             logging.error(f"Error clearing cluster assignments: {e}")
             return False
+
+    def search_images_by_people(self, names: List[str], match_all: bool = False) -> List[Tuple[int, bytes, List[str]]]:
+        """Search for images containing specific people.
+        
+        Args:
+            names: List of names to search for
+            match_all: If True, return only images containing all specified people
+                      If False, return images containing any of the specified people
+        
+        Returns:
+            List of tuples (image_id, thumbnail_data, list_of_names_in_image)
+        """
+        try:
+            if not names:
+                return []
+
+            with self.get_connection() as (_, cursor):
+                # Build query based on match type
+                if match_all:
+                    # For match_all, we need a subquery that counts matches
+                    query = '''
+                        WITH image_matches AS (
+                            SELECT i.image_id, i.filename, 
+                                   COUNT(DISTINCT f.name) as name_matches,
+                                   GROUP_CONCAT(DISTINCT f.name) as names_in_image
+                            FROM images i
+                            JOIN faces f ON i.image_id = f.image_id
+                            WHERE f.name IN ({})
+                            GROUP BY i.image_id
+                            HAVING name_matches = ?
+                        )
+                        SELECT m.image_id, t.thumbnail, m.names_in_image
+                        FROM image_matches m
+                        JOIN thumbnails t ON m.image_id = t.image_id
+                        ORDER BY m.image_id
+                    '''.format(','.join('?' * len(names)))
+                    params = [*names, len(names)]
+                else:
+                    # For match_any, a simple WHERE IN clause
+                    query = '''
+                        SELECT DISTINCT i.image_id, t.thumbnail,
+                               (SELECT GROUP_CONCAT(DISTINCT name)
+                                FROM faces
+                                WHERE image_id = i.image_id
+                                AND name IN ({})) as names_in_image
+                        FROM images i
+                        JOIN faces f ON i.image_id = f.image_id
+                        JOIN thumbnails t ON i.image_id = t.image_id
+                        WHERE f.name IN ({})
+                        ORDER BY i.image_id
+                    '''.format(','.join('?' * len(names)), 
+                             ','.join('?' * len(names)))
+                    params = names + names
+
+                cursor.execute(query, params)
+                results = cursor.fetchall()
+                
+                # Convert results to the expected format
+                processed_results = []
+                for image_id, thumbnail, names_str in results:
+                    names_in_image = names_str.split(',') if names_str else []
+                    processed_results.append((image_id, thumbnail, names_in_image))
+
+                logging.info(f"Found {len(processed_results)} images matching search criteria")
+                return processed_results
+
+        except Exception as e:
+            logging.error(f"Error searching images by people: {e}")
+            return []
