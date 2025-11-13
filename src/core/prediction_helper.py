@@ -1,8 +1,9 @@
-import torch
 import logging
 from pathlib import Path
+
 import joblib
-from facenet_pytorch import InceptionResnetV1
+import torch
+from facenet_pytorch import InceptionResnetV1, MTCNN
 
 class PredictionHelper:
     def __init__(self):
@@ -20,12 +21,13 @@ class PredictionHelper:
                 logging.warning("Model directory not found")
                 return False
 
-            # Load MTCNN and ResNet models
-            self.mtcnn = torch.load(self.model_dir / 'mtcnn_complete.pth', map_location=self.device)
-            self.resnet = torch.load(self.model_dir / 'face_encoder_complete.pth', map_location=self.device)
+            self.mtcnn = self._load_mtcnn(self.model_dir / 'mtcnn_complete.pth')
+            self.resnet = self._load_resnet(self.model_dir / 'face_encoder_complete.pth')
+            if self.resnet is None:
+                logging.error("Failed to load face encoder model")
+                return False
             self.resnet.eval()
 
-            # Load classifier and label encoder
             self.classifier = joblib.load(self.model_dir / 'face_classifier.joblib')
             self.label_encoder = joblib.load(self.model_dir / 'label_encoder.joblib')
             
@@ -35,6 +37,35 @@ class PredictionHelper:
         except Exception as e:
             logging.error(f"Error initializing prediction helper: {e}")
             return False
+
+    def _load_mtcnn(self, path: Path):
+        if not path.exists():
+            logging.warning("MTCNN weights not found")
+            return None
+        state = torch.load(path, map_location=self.device)
+        if isinstance(state, dict):
+            mtcnn = MTCNN(keep_all=False, device=self.device)
+            mtcnn.load_state_dict(state)
+            return mtcnn
+        return state  # backward compatibility
+
+    def _load_resnet(self, path: Path):
+        if not path.exists():
+            logging.warning("Face encoder weights not found")
+            return None
+        state = torch.load(path, map_location=self.device)
+        model = None
+        if isinstance(state, dict):
+            model = InceptionResnetV1(pretrained='vggface2')
+            try:
+                model.load_state_dict(state)
+            except Exception as exc:
+                logging.error("Failed to load resnet state dict: %s", exc)
+                return None
+        else:
+            model = state  # fallback to pre-serialized module
+        model = model.to(self.device)
+        return model
 
     def predict_face(self, face_tensor):
         if not self.is_initialized:

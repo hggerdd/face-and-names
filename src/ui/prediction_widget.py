@@ -11,6 +11,7 @@ import torch
 import cv2
 import numpy as np
 from ..core.prediction_helper import PredictionHelper
+from ..utils.face_preprocessing import preprocess_face_image
 
 class PredictionWorker(QThread):
     progress = pyqtSignal(str, int)  # status message, progress percentage
@@ -72,13 +73,7 @@ class PredictionWorker(QThread):
                         continue
 
                     # Preprocess image
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    img = cv2.resize(img, (160, 160))
-                    img = (img - 127.5) / 128.0
-                    
-                    # Convert to tensor
-                    face_tensor = torch.from_numpy(img).float()
-                    face_tensor = face_tensor.permute(2, 0, 1)
+                    face_tensor = preprocess_face_image(img)
 
                     # Get prediction
                     predicted_name, confidence = self.prediction_helper.predict_face(face_tensor)

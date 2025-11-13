@@ -44,13 +44,33 @@ class DatabaseManager:
         with self._context.transaction() as cursor:
             yield cursor
 
-    def _get_image_location(self, image_path: Path) -> tuple[str, str, str]:
+    def _get_image_location(self, image_path: Path, base_root: Path | None = None) -> tuple[str, str, str]:
         """Extract standardized location components from an image path."""
-        return (
-            str(image_path.parent.parent),  # base_folder
-            image_path.parent.name,         # sub_folder
-            image_path.name                 # filename
-        )
+        resolved = image_path.resolve()
+
+        if base_root is not None:
+            try:
+                resolved_root = base_root.resolve()
+                relative = resolved.relative_to(resolved_root)
+                parts = relative.parts
+                sub_folder = parts[-2] if len(parts) > 1 else ""
+                return (str(resolved_root), sub_folder, resolved.name)
+            except ValueError:
+                logging.debug("Path %s not relative to %s; falling back to absolute components", resolved, base_root)
+
+        parents = resolved.parents
+
+        if len(parents) >= 2:
+            base_folder = str(parents[1])
+            sub_folder = parents[0].name
+        elif len(parents) == 1:
+            base_folder = str(parents[0])
+            sub_folder = ""
+        else:
+            base_folder = ""
+            sub_folder = ""
+
+        return (base_folder, sub_folder, resolved.name)
 
     def _save_thumbnail(self, cursor: sqlite3.Cursor, image_id: int, image_data: np.ndarray) -> bool:
         """Save thumbnail for an image."""
@@ -75,10 +95,16 @@ class DatabaseManager:
             logging.error(f"Error saving thumbnail: {e}")
             return False
 
-    def get_or_create_image_id(self, image_path: Path, image_data: np.ndarray = None, import_id: int = None) -> Optional[int]:
+    def get_or_create_image_id(
+        self,
+        image_path: Path,
+        image_data: np.ndarray = None,
+        import_id: int = None,
+        base_root: Path = None,
+    ) -> Optional[int]:
         """Get existing image ID or create new entry with thumbnail."""
         try:
-            base_folder, sub_folder, filename = self._get_image_location(image_path)
+            base_folder, sub_folder, filename = self._get_image_location(image_path, base_root)
             
             with self.transaction() as cursor:
                 # Try to find existing image
@@ -114,13 +140,13 @@ class DatabaseManager:
             logging.error(f"Error in get_or_create_image_id: {e}")
             return None
 
-    def save_faces(self, faces: List[DetectedFace]) -> bool:
+    def save_faces(self, faces: List[DetectedFace], base_root: Path = None) -> bool:
         """Save detected faces without storing predictions."""
-        return self.face_writer.save_faces(faces, include_predictions=False)
+        return self.face_writer.save_faces(faces, include_predictions=False, base_root=base_root)
 
-    def save_faces_with_predictions(self, faces: List[DetectedFace]) -> bool:
+    def save_faces_with_predictions(self, faces: List[DetectedFace], base_root: Path = None) -> bool:
         """Save detected faces including prediction metadata."""
-        return self.face_writer.save_faces_with_predictions(faces)
+        return self.face_writer.save_faces_with_predictions(faces, base_root=base_root)
 
     def get_faces_query(self, conditions: str = "", params: tuple = ()) -> List[tuple]:
         """Generic method for retrieving faces with specified conditions."""
@@ -773,9 +799,9 @@ class DatabaseManager:
             logging.error(f"Error getting faces by name: {e}")
             return []
 
-    def record_no_face_image(self, image_path: Path) -> bool:
+    def record_no_face_image(self, image_path: Path, base_root: Path = None) -> bool:
         """Record an image that contains no faces."""
-        return self.face_writer.record_no_face_image(image_path)
+        return self.face_writer.record_no_face_image(image_path, base_root=base_root)
 
     def get_thumbnail(self, image_id: int) -> Optional[bytes]:
         """Retrieve thumbnail for an image."""

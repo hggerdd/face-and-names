@@ -150,6 +150,21 @@ class DatabaseWriteTests(unittest.TestCase):
             rows = cursor.fetchall()
             self.assertEqual(rows, [("EXIF_DateTime", "2021:02:02 11:00:00"), ("IPTC_Title", "Vacation")])
 
+    def test_get_image_location_handles_shallow_paths(self):
+        flat_image = Path(self._tmpdir.name) / "solo.jpg"
+        flat_image.touch()
+        base, sub, name = self.db._get_image_location(flat_image, Path(self._tmpdir.name))
+        self.assertEqual(name, "solo.jpg")
+        self.assertEqual(sub, "")
+        self.assertTrue(base)
+
+        nested = Path(self._tmpdir.name) / "albums" / "party" / "img.jpg"
+        nested.parent.mkdir(parents=True, exist_ok=True)
+        nested.touch()
+        base, sub, name = self.db._get_image_location(nested, Path(self._tmpdir.name))
+        self.assertEqual(sub, "party")
+        self.assertEqual(name, "img.jpg")
+
 
 if __name__ == "__main__":
     unittest.main()

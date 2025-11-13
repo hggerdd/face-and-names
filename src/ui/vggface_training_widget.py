@@ -88,15 +88,13 @@ class VGGFaceTrainingWorker(QThread):
             # Create models directory if it doesn't exist
             self.save_path.mkdir(parents=True, exist_ok=True)
 
-            # Save the complete models right after initialization
+            # Save initial weights
             self.progress.emit("Saving initial models...", 10)
             try:
-                # Save complete MTCNN model
-                torch.save(mtcnn, self.save_path / 'mtcnn_complete.pth')
-                # Save complete ResNet model
-                torch.save(resnet, self.save_path / 'face_encoder_complete.pth')
+                torch.save(mtcnn.state_dict(), self.save_path / 'mtcnn_complete.pth')
+                torch.save(resnet.state_dict(), self.save_path / 'face_encoder_complete.pth')
             except Exception as e:
-                logging.error(f"Error saving complete models: {e}")
+                logging.error(f"Error saving initial model weights: {e}")
                 self.error.emit(f"Failed to save models: {str(e)}")
                 return
 

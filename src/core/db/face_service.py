@@ -15,20 +15,20 @@ class FaceWriteService:
     def __init__(
         self,
         context: DatabaseContext,
-        image_id_resolver: Callable[[Path], Optional[int]],
+        image_id_resolver: Callable[[Path, Optional[Path]], Optional[int]],
         image_location_resolver: Callable[[Path], tuple[str, str, str]],
     ):
         self._context = context
         self._get_or_create_image_id = image_id_resolver
         self._get_image_location = image_location_resolver
 
-    def save_faces(self, faces: Iterable, include_predictions: bool = False) -> bool:
-        return self._persist_faces(faces, include_predictions)
+    def save_faces(self, faces: Iterable, include_predictions: bool = False, base_root: Path | None = None) -> bool:
+        return self._persist_faces(faces, include_predictions, base_root)
 
-    def save_faces_with_predictions(self, faces: Iterable) -> bool:
-        return self._persist_faces(faces, include_predictions=True)
+    def save_faces_with_predictions(self, faces: Iterable, base_root: Path | None = None) -> bool:
+        return self._persist_faces(faces, include_predictions=True, base_root=base_root)
 
-    def _persist_faces(self, faces: Iterable, include_predictions: bool) -> bool:
+    def _persist_faces(self, faces: Iterable, include_predictions: bool, base_root: Path | None = None) -> bool:
         faces = list(faces)
         if not faces:
             return False
@@ -37,7 +37,7 @@ class FaceWriteService:
             with self._context.transaction() as cursor:
                 for face in faces:
                     try:
-                        image_id = self._get_or_create_image_id(face.original_file)
+                        image_id = self._get_or_create_image_id(face.original_file, base_root=base_root)
                         if image_id is None:
                             continue
 
@@ -91,10 +91,10 @@ class FaceWriteService:
             logging.error("Error saving faces: %s", exc)
             return False
 
-    def record_no_face_image(self, image_path: Path) -> bool:
+    def record_no_face_image(self, image_path: Path, base_root: Path | None = None) -> bool:
         try:
             with self._context.transaction() as cursor:
-                image_id = self._get_or_create_image_id(image_path)
+                image_id = self._get_or_create_image_id(image_path, base_root=base_root)
                 if image_id is None:
                     return False
                 cursor.execute(

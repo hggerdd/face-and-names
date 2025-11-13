@@ -4,7 +4,6 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from pathlib import Path
 import logging
-import torch
 import numpy as np
 import cv2
 import json
@@ -12,6 +11,7 @@ from ..core.face_detector import FaceDetectionProcessor  # Fix the import
 from ..core.prediction_helper import PredictionHelper
 from ..utils.image_utils import correct_image_orientation
 from ..utils.metadata_utils import extract_image_metadata
+from ..utils.face_preprocessing import preprocess_face_image
 
 
 class FaceDetectionWorker(QThread):
@@ -103,7 +103,8 @@ class FaceDetectionWorker(QThread):
                             image_id = self.processor.db_manager.get_or_create_image_id(
                                 img_path, 
                                 image.copy(),
-                                import_id
+                                import_id,
+                                base_root=directory
                             )
                             if not image_id:
                                 logging.error(f"Failed to create image entry for {img_path}")
@@ -120,18 +121,10 @@ class FaceDetectionWorker(QThread):
                                     for face in faces:
                                         if self.prediction_helper and self.prediction_helper.is_initialized:
                                             try:
-                                                # Convert face image to tensor
-                                                face_img = cv2.cvtColor(face.face_image, cv2.COLOR_BGR2RGB)
-                                                face_img = cv2.resize(face_img, (160, 160))  # Required size
-                                                face_img = (face_img - 127.5) / 128.0  # Normalize pixel values
-                                                face_tensor = torch.from_numpy(face_img).float()
-                                                face_tensor = face_tensor.permute(2, 0, 1)  # Convert to CxHxW
-                                                
-                                                # Get prediction
+                                                face_tensor = preprocess_face_image(face.face_image)
                                                 predicted_name, confidence = self.prediction_helper.predict_face(face_tensor)
                                                 logging.info(f"Got prediction: {predicted_name} with confidence {confidence}")
                                                 
-                                                # Set prediction attributes based on threshold
                                                 if confidence > self.prediction_threshold:
                                                     face.predicted_name = predicted_name
                                                     face.prediction_confidence = confidence
@@ -146,12 +139,12 @@ class FaceDetectionWorker(QThread):
                                                 face.prediction_confidence = None
 
                                     # Save faces with predictions
-                                    saved = self.processor.db_manager.save_faces_with_predictions(faces)
+                                    saved = self.processor.db_manager.save_faces_with_predictions(faces, base_root=directory)
                                     if not saved:
                                         logging.error("Failed to save faces with predictions")
                                 else:
                                     # Save faces without predictions
-                                    saved = self.processor.db_manager.save_faces(faces)
+                                    saved = self.processor.db_manager.save_faces(faces, base_root=directory)
                                     if not saved:
                                         logging.error("Failed to save faces")
 
@@ -166,7 +159,7 @@ class FaceDetectionWorker(QThread):
                                 )
                             else:
                                 # Even if no faces found, ensure we have a thumbnail
-                                self.processor.db_manager.record_no_face_image(img_path)
+                                self.processor.db_manager.record_no_face_image(img_path, base_root=directory)
                                 no_face_images += 1
                                 self.progress.emit(
                                     str(img_path.relative_to(directory)), 

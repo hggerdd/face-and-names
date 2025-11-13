@@ -24,3 +24,14 @@ These changes prepare the codebase for future database changes, reduce duplicati
   - Added `tests/test_db_services.py` covering import creation, face saves (with prediction data), and metadata replacement using an in-memory SQLite DB with lightweight `cv2` stubs.
 
 This refactor keeps the heavy DB logic isolated behind small services and gives us automated safety nets for the highest-risk write operations.
+
+## Feature Summary – `ml-pipeline-alignment`
+
+- **Shared face preprocessing**  
+  - Added `src/utils/face_preprocessing.py` and wired both detection-time predictions and the batch prediction worker to use the same normalization (BGR→RGB, resize to 160, `(x-127.5)/128`). This keeps inference consistent with training.
+
+- **state_dict model artifacts**  
+  - Training now saves MTCNN and FaceNet encoder weights via `state_dict`; `PredictionHelper` auto-detects whether the files contain full modules or weight dictionaries for backward compatibility.
+
+- **Robust path handling**  
+  - `_get_image_location` accepts the import root to compute `(base_folder, sub_folder, filename)` reliably, even for flat folder structures, and README documents the expected layout. Tests cover the new behavior.
