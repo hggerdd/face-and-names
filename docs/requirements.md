@@ -85,11 +85,41 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-045** The system shall provide a dedicated People Management page for CRUD on Person IDs, including primary name, aliases/short names, optional birthdate, and notes. **[REQ]**
 - **FR-046** The system shall support merging two or more Person IDs into one, updating all linked faces/images. **[REQ]**
 - **FR-047** Updating a person’s display name or aliases shall not require model retraining; model outputs remain Person IDs. **[REQ]**
+- **FR-068** The People Management page shall support CRUD for reusable groups/tags (e.g., Family, Study Friends) and assign multiple groups to each Person ID. **[DER]**
+- **FR-069** The system shall support hierarchical groups (parent/child) such that a parent group (e.g., Family) can contain subgroups (e.g., Near Family, Extended Family), and membership in a child implies membership in its parent. **[DER]**
+- **FR-070** The Faces workspace filters shall include group/tag selection (multi-select) to scope faces by group membership. **[DER]**
 
 ### 4.11 Diagnostics
 - **FR-048** The system shall present a diagnostics panel showing model presence/health, DB health, cache stats, and device selection (CPU/GPU). **[REQ]**
 - **FR-049** The system shall surface clear errors for missing models or corrupt images and allow skip/retry options with logging. **[REQ]**
 - **FR-050** The system shall provide tools to repair missing thumbnails and to review duplicates detected by the identity scheme. **[REQ]**
+
+### 4.12 Resilience, Logging, and Recovery
+- **FR-051** The system shall emit structured logs with levels (info/warn/error), rotation/retention, and per-feature surfaces for recent errors; logs shall record retry/skip outcomes. **[DER]**
+- **FR-052** The system shall support retry/skip workflows for failed items in ingest, detection, prediction, and clustering while preserving partial progress after cancellation. **[DER]**
+- **FR-053** The system shall resume an interrupted ingest (cancel/crash) using recorded import session state to avoid reprocessing completed items. **[DER]**
+- **FR-054** The system shall cap background worker concurrency and prioritize interactive tasks so heavy jobs do not starve the UI or each other. **[DER]**
+
+### 4.13 Export and Portability
+- **FR-055** The system shall export/import people records (names/aliases/birthdates/notes) and faces/stats summaries to portable formats (e.g., JSON/CSV) scoped to a DB Root. **[DER]**
+- **FR-056** A DB Root (database + images) shall remain portable across machines; on path/mount changes the app shall detect and relink automatically when relative structure matches. **[DER]**
+- **FR-057** The system shall provide a built-in environment self-test covering model presence, device availability, and sample detection/prediction with clear pass/fail output. **[DER]**
+
+### 4.14 Identity Scheme
+- **FR-058** The system shall store both a strong content hash and a perceptual hash per image and use them to detect duplicates and moved/renamed files under the DB Root. **[DER]**
+- **FR-059** Identity collisions (different files with same hash) shall surface a conflict workflow (keep existing, replace, or mark duplicate) and log the decision. **[DER]**
+
+### 4.15 Prediction/Detection Pipeline Controls
+- **FR-060** The prediction service shall support device selection (CPU/GPU) with automatic fallback and per-model default thresholds. **[DER]**
+- **FR-061** The detector and recognition stages shall support configurable batching/warm-up within a session to reduce reload/latency overhead. **[DER]**
+- **FR-062** The system shall enforce a minimum face size threshold (configurable) with clamp/skip behavior recorded in metadata when faces are below the threshold. **[DER]**
+- **FR-063** The absence of a recognition model shall not break ingest, detection, clustering, or UI flows; the system shall surface a clear “model unavailable/untrained” state and allow later installation/training without data loss. **[DER]**
+
+### 4.16 Unified Faces Workspace
+- **FR-064** The application shall provide a single “Faces” workspace that replaces separate cluster/prediction/person tabs; it shall surface shared filters (scope, confidence range, unnamed-only, differs-from-name, date range) and mode toggles (Cluster, Prediction, Person, All). **[DER]**
+- **FR-065** The Faces workspace shall display a virtualized grid of face tiles showing current name (if any), predicted name + confidence, and cluster ID badge, with shared interactions: single-click toggles selection, double-click accepts prediction or opens rename depending on mode, right-click opens preview. **[DER]**
+- **FR-066** The Faces workspace shall include a contextual side panel that changes with mode: Cluster mode shows cluster navigation/histogram and bulk assign/clear; Prediction mode shows confidence histogram and bulk accept/rename; Person mode shows person metadata/timeline and bulk rename/merge; All mode shows summary stats. **[DER]**
+- **FR-067** The Faces workspace shall expose global actions in a footer/header for start/stop clustering, start/stop batch prediction, progress indicators, and status of model availability/device selection, without requiring navigation to another tab. **[DER]**
 
 ## 5. Non-Functional Requirements (NFR)
 - **NFR-001 Performance**: Time from launch to main UI ready (or splash dismissal) shall be ≤ 2 seconds on target modest hardware, measured with a representative DB and no blocking tasks. **[REQ]**
@@ -101,12 +131,21 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **NFR-007 Extensibility**: The system shall support pluggable recognition models via a defined runner interface without requiring UI rewrites. **[REQ]**
 - **NFR-008 Reliability**: Identity scheme shall prevent duplicate ingest of the same image content even if filenames/paths change under the DB Root. **[REQ]**
 - **NFR-009 Testability**: Each requirement shall be verifiable via functional tests (FRs) or performance/reliability tests (NFRs) with measurable criteria as stated. **[DER]**
+- **NFR-010 Performance**: Ingest, clustering, and batch prediction shall meet agreed throughput targets and publish measured rates; performance tests shall enforce these budgets on target hardware. **[DER]**
+- **NFR-011 Resource Use**: Background jobs shall honor RAM/GPU ceilings (to be agreed) and degrade gracefully rather than exhaust system resources. **[DER]**
+- **NFR-012 Storage**: Thumbnails and face crops shall stay within defined footprint budgets (e.g., ≤ X GB per 10k images) while meeting quality needs. **[DER]**
+- **NFR-013 Accessibility**: The UI shall support keyboard navigation (including accept/rename/delete shortcuts), focus order, screen-reader labels, and contrast targets aligned to WCAG 2.1 AA. **[DER]**
+- **NFR-014 Security/Privacy**: Processing shall be local by default with no outbound network calls unless configured; optional encryption for the database and stored thumbnails/crops shall be available. **[DER]**
+- **NFR-015 UI Performance**: Views that list many faces or images (e.g., naming, per-person, people list) shall use virtualization or pagination to maintain responsiveness and memory bounds. **[DER]**
 
 ## 6. Business Rules
 - **BR-001** Person IDs are the only identifiers used by models; user-visible names/aliases are resolved at presentation time. **[REQ]**
 - **BR-002** Changing a person’s display name or aliases does not alter model outputs; accepted predictions rebind faces to Person IDs, not names. **[REQ]**
 - **BR-003** Images outside the DB Root are out of scope and must not be ingested or displayed. **[REQ]**
 - **BR-004** Duplicate detection uses the chosen image identity scheme; duplicates are not re-ingested. **[REQ]**
+- **BR-005** Primary names shall be unique per DB Root; alias collisions shall prompt user resolution, and merges shall preserve or reconcile aliases. **[DER]**
+- **BR-006** Rename/merge/delete/accept-prediction actions shall be audit logged with timestamp and actor to support traceability. **[DER]**
+- **BR-007** Person IDs may belong to multiple groups/tags simultaneously; group hierarchy implies inheritance of membership from child to parent. **[DER]**
 
 ## 7. Data / Information Model (Conceptual)
 - **Image**: relative_path, sub_folder, filename, identity (hash/perceptual), dimensions/size, import_id, has_faces, thumbnail BLOB, metadata entries. **[REQ]**
@@ -114,6 +153,8 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **Import Session**: import_id, import_date, folder_count, image_count. **[REQ]**
 - **Metadata**: image_id, key, type (EXIF/IPTC), value. **[REQ]**
 - **Person**: person_id, primary_name, aliases/short_names, birthdate (optional), notes. **[REQ]**
+- **Group**: group_id, name, parent_group_id (nullable), description/tag color. **[DER]**
+- **PersonGroup**: person_id, group_id (many-to-many). **[DER]**
 - **Stats**: computed aggregates for Data Insights. **[REQ]**
 
 ## 8. Process Descriptions / User Flows (High-Level)
@@ -134,6 +175,8 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - UI technology and storage can be chosen freely, provided functional and non-functional requirements are met. **[DER]**
 - Performance targets assume “modest hardware” (to be profiled and agreed during planning). **[REQ]**
 - The DB Root will contain both the database file and the image hierarchy. **[REQ]**
+- The supported image formats (e.g., JPEG/PNG/HEIC) and max resolution/min face size shall be agreed; RAW formats are out of scope unless explicitly added. **[DER]**
+- Multiple DB Roots may coexist; operations (ingest, clear, export) are scoped to the currently selected DB Root. **[DER]**
 
 ## 11. Open Issues / Items Requiring Clarification
 - **OI-001** Exact hash/identity scheme selection (content hash vs perceptual hash vs hybrid) needs final decision and collision/robustness criteria. **[REQ]**
@@ -142,3 +185,6 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **OI-004** Age-at-capture display rules (format, fallback when capture date missing) need definition. **[REQ]**
 - **OI-005** Duplicate/repair tools UX (approval flow, conflict resolution) needs detailed design. **[REQ]**
 - **OI-006** Accessibility/theming scope (which controls, required contrasts, keyboard shortcuts) needs specification. **[REQ]**
+- **OI-007** Specific concurrency caps and prioritization rules for background tasks vs UI responsiveness need agreement. **[DER]**
+- **OI-008** Export/import format details (fields, redaction of PII, conflict resolution) need specification. **[DER]**
+- **OI-009** Security posture: default network isolation vs optional online features, and key management for optional encryption, need definition. **[DER]**
