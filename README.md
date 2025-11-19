@@ -5,7 +5,7 @@ We’re starting fresh on branch `rewrite/next-gen`, using v1.0.0 as the frozen 
 ## Goals
 - Streamlined photo ingest → detect → cluster → name → predict/review → browse/annotate.
 - Fast startup and responsive UI on large libraries.
-- Clear, testable requirements (see `docs/functional_requirements.md` and `docs/face_detection_pipeline.md`).
+- Clear, testable requirements (see `docs/requirements.md`).
 - Clean data contracts and background task patterns defined up front.
 
 ## Immediate Steps
