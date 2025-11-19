@@ -63,10 +63,10 @@ Single-source reference for the reboot. Derived from the v1.0.0 behavior and cap
 - Platform helpers for opening files/folders per OS.
 
 ## Backlog / Additional Requirements
-- Faster startup: early model/weights check; parallelize safe init; keep heavy imports lazy.
+- Faster startup: early model/weights check; parallelize safe init; keep heavy imports lazy; no heavy tab-specific work until the tab is opened.
 - Better filtering/search: date/month filters (mentioned “circles” UI), person combinations (A & B not C) with indexed queries and UI surfacing.
 - Reliability: clear errors when models missing; GPU/CPU selection guard; skip/retry corrupt images; ensure thumbnails even when no faces.
-- Consistent UX patterns: standardized progress/cancel, disabled controls during work, harmonized double-click semantics for accepting predictions.
+- Consistent UX patterns: standardized progress/cancel, disabled controls during work, harmonized double-click semantics for accepting predictions; richer tooltips/labels (e.g., “Face recognition confidence” vs “confidence”).
 - Import robustness: resumable imports; dedupe handling; diagnostics panel for health checks (models present, DB writable, CUDA availability).
 - Data quality tools: duplicate filename review UI; fixer for missing thumbnails; low-confidence prediction review flow.
 - Clustering enhancements: persist parameters per run; rerun on subsets; noise/outlier review UI.
@@ -81,3 +81,47 @@ Single-source reference for the reboot. Derived from the v1.0.0 behavior and cap
 - After requirements lock: design schema (images/faces/metadata/clusters/predictions with versioning), model artifact contracts/validation, caching/eviction policy.
 - Technical decisions: stack (likely PyQt + SQLite), module boundaries to avoid heavy startup imports, testing approach (headless with stubs; regression smokes).
 - Risks/open questions: expected dataset scale, in-app vs external training and model delivery, resumable import strategy, duplicate handling policy.
+
+## New/Expanded Requirements from v1 Experience
+
+### Source-Scoped Datastores
+- DB file defines the root scope: only images inside the DB’s folder and its subfolders are eligible (e.g., `X:/Bilder/image-and-face.db` scopes to `X:/Bilder/**`).
+- Paths must be drive-agnostic/portable: store paths relative to the DB root; tolerate drive letter changes and different mount points.
+- To analyze a new library, create a new DB in the corresponding root folder; switching drives should not break lookups as long as relative paths persist.
+
+### Identity and People Management
+- Internal models operate on stable person IDs, not names. Names/aliases are user-facing bindings on top of IDs.
+- People entity: primary name, short name/aliases, optional metadata (notes), optional birthdate to compute age at capture date (fun but non-mandatory).
+- People management page: create/edit/merge people, manage aliases, view linked faces/images, change display name without retraining models.
+- Predictions store predicted person IDs; user-visible names resolved via people records; updates to names should not require model retrain.
+
+### Image Identity (beyond filename)
+- Add robust image identity to survive renames/moves; proposed options (choose and document one or a hybrid):
+  1) Per-file content hash (e.g., SHA-256 of bytes or downscaled hash) + size as primary key.
+  2) Perceptual hash (pHash/aHash) to survive minor edits/resaves.
+  3) EXIF capture timestamp + pixel hash fallback when hash unavailable.
+  4) Relative path (to DB root) + inode/mtime fingerprint as a cheap fast check plus hash confirmation.
+  5) Stored thumbnail hash to detect duplicate content on re-import.
+- Requirement: dedupe guard on ingest using chosen identity scheme; allow re-locating library as long as relative layout is preserved.
+
+### UI/UX Cohesion
+- Single style guide across tabs: consistent typography, spacing, buttons, cards/panels. Not fancy, but polished and readable.
+- Tooltips and labels must be informative (e.g., “Face recognition confidence”); onboarding hints where workflows are complex.
+- Consolidated navigation: clarify which “pages” are needed (e.g., ingest, cluster, name, prediction review, insights) and reduce redundancy between similar prediction/naming views.
+- Progress everywhere long actions happen; no expensive work before a tab is opened.
+
+### Performance-First Design
+- Lazy-load models/resources per feature; preload health checks asynchronously.
+- Background workers for long tasks with progress/cancel; keep main thread responsive on modest hardware.
+- Define acceptable latency budgets and measure (startup, per-image ingest, tab switching, cluster/prediction throughput).
+
+### States and Views for Faces
+- Track face states by person ID and provenance (manual vs predicted) but surface a simple set of views:
+  - Recent import grouping/cluster view.
+  - Prediction-focused view (group by predicted ID, confidence filters).
+  - Name-focused view (per-person list with timeline/metadata).
+- Ensure state transitions are clear: unknown → predicted → confirmed (manual or accepted prediction), but models stay ID-based.
+
+### Future Model Plug-in
+- Architecture should allow adding new recognition models/providers (local or external) without UI rewrites: defined interface for model runners, metadata (name, version, device), input/output contracts (embedding size, label type).
+- Model selection/configurable thresholds per model; validation/health checks at startup and per-run.
