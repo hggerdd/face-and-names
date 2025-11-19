@@ -1,20 +1,13 @@
-# face-and-names (rewrite plan)
+# face-and-names v2 (greenfield)
 
-We’re starting fresh on branch `rewrite/next-gen`, using v1.0.0 as the frozen reference. This README tracks the greenfield plan; the legacy code and docs stay available for lookup.
+All legacy code has been removed. This repository is now a clean slate for the v2 implementation with no backward-compatibility constraints.
 
-## Goals
-- Streamlined photo ingest → detect → cluster → name → predict/review → browse/annotate.
-- Fast startup and responsive UI on large libraries.
-- Clear, testable requirements (see `docs/requirements.md`).
-- Clean data contracts and background task patterns defined up front.
+## What remains
+- Requirements source of truth: `docs/requirements.md`
+- Legacy artifacts kept for reference only: model weights in `face_recognition_models`, sample data such as `faces.db`, and historical notes in `commit-notes.md`.
 
-## Immediate Steps
-1) Finalize user stories and edge cases per flow (import, clustering, naming, prediction, browsing).
-2) Set performance budgets (startup, ingest throughput, max UI stall) and agree on async/worker architecture.
-3) Design the new schema and model artifact contracts after requirements are locked.
-4) Define shared interaction rules (click/double-click, delete, preview, batch accept, progress/cancel).
-5) Draft a minimal UX map/wireframe for the core tabs before coding.
-
-## Reference
-- Consolidated requirements: `docs/requirements.md`
-- Tag `v1.0.0` marks the previous implementation for comparison.
+## Next steps before coding
+1) Confirm the target tech stack and project layout (app, services, tests, tooling).
+2) Define the initial database/schema plan and migration/reset strategy for new DB roots.
+3) Document the build/run workflow to be used for v2 (package manager, env setup, lint/test commands).
+4) Establish traceability: map planned milestones to the numbered requirements in `docs/requirements.md`.
