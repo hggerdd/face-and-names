@@ -1,0 +1,40 @@
+[project]
+name = "face-and-names"
+version = "0.0.0"
+description = "Face-and-Names v2 (greenfield rewrite) – PyQt desktop app for ingesting, detecting, clustering, and managing faces."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Project Team" }
+]
+dependencies = [
+  "pyqt6>=6.6",
+  "pillow>=10.0.0",
+  "imagehash>=4.3.1",
+  "exifread>=3.0.0",
+  "scikit-learn>=1.4.0",
+]
+
+[project.optional-dependencies]
+detector-mtcnn = ["facenet-pytorch>=2.5.3", "torch>=2.2.0"]
+detector-yolo = ["ultralytics>=8.0.0"]
+onnx = ["onnxruntime>=1.16.0"]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.3.0",
+  "mypy>=1.8.0",
+  "coverage>=7.4.0",
+]
+
+[tool.uv]
+# Pin a constraint file or index as needed; update once dependencies are finalized.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-select = ["I"]  # import sorting
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["face_and_names/tests"]
