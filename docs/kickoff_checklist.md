@@ -3,7 +3,7 @@
 Use this to move from planning to initial scaffolding. No coding yet; this lists the first concrete actions once ready to implement.
 
 1) Confirm detector and recognition backends for v2:
-   - Detector: select YOLO-based (matching `yolov11n-face.pt`) or MTCNN (`facenet-pytorch`) as default; verify licensing and performance.
+   - Detector: YOLO-based (matching `yolov11n-face.pt`) as default; optionally keep MTCNN fallback. Verify licensing and performance.
    - Recognition: choose runner using existing weights under `face_recognition_models/` (torch) or convert to ONNX if desired.
 2) Pin dependency versions and create `pyproject.toml`; generate `uv.lock`.
 3) Create initial project structure per `docs/directory_structure.md` with empty modules and wiring stubs (no business logic).

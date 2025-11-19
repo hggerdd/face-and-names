@@ -15,6 +15,8 @@ Proposed configuration layout and keys (human-readable files). Actual file forma
 - `logging.retention_days` (int)
 - `models.path` (override to model assets)
 - `telemetry.offline` (bool, default true)
+- `detector.default` (e.g., "yolo")
+- `detector.yolo.weights_path` (path to `yolov11n-face.pt`)
 
 ## DB-Scoped Config (examples)
 - `db_root.path` (recorded for relink detection)

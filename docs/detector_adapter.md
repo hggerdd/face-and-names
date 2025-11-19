@@ -1,6 +1,6 @@
 # Face-and-Names v2 – Detector Adapter (Conceptual)
 
-Defines the contract for face detection backends (e.g., MTCNN, YOLO). Aligns with ingestion and prediction pipelines.
+Defines the contract for face detection backends (e.g., YOLO default, MTCNN optional). Aligns with ingestion and prediction pipelines.
 
 ## Goals
 - Consistent bbox output (absolute and relative), with padding/clamping (FR-010).

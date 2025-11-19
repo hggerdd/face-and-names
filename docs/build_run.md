@@ -23,7 +23,8 @@ This is a pre-code checklist for environment and tooling. It assumes Python with
 - Tests: `uv run pytest`
 
 ## Data & Models
-- Model assets expected under `face_recognition_models/` and referenced via config; presence checks in diagnostics.
+- Detector default: YOLO via `ultralytics` using bundled `yolov11n-face.pt` (configure path).
+- Recognition assets expected under `face_recognition_models/` and referenced via config; presence checks in diagnostics.
 - DB Root holds SQLite DB and cache folders; paths stored relative to DB Root.
 
 ## Logging

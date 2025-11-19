@@ -6,9 +6,7 @@ Target Python 3.11; manage with `uv`. Finalize versions when creating `pyproject
 - UI: `PyQt6` (or `PyQt5` fallback if deployment requires). Include Qt SVG/webengine only if needed.
 - Imaging/EXIF: `Pillow` (for load/resize/orientation); `exifread` or `piexif` for robust EXIF/IPTC extraction if Pillow tags are insufficient.
 - Hashing: `hashlib` (stdlib) for SHA-256; `ImageHash` (pHash) for perceptual hash.
-- Detection: align with available weights; options:
-  - `facenet-pytorch` for MTCNN
-  - YOLO-based detector via `ultralytics` or custom lightweight wrapper matching `yolov11n-face.pt`
+- Detection (default): YOLO via `ultralytics` using the bundled `yolov11n-face.pt` weights. Alternate: `facenet-pytorch` (MTCNN) as optional extra.
 - Recognition: model runner interface; options:
   - `torch` for embedding models (e.g., face encoder pth)
   - `onnxruntime` (CPU/GPU) if using ONNX models
