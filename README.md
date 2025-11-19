@@ -16,8 +16,5 @@ We’re starting fresh on branch `rewrite/next-gen`, using v1.0.0 as the frozen 
 5) Draft a minimal UX map/wireframe for the core tabs before coding.
 
 ## Reference
-- Legacy behavior and requirements distilled in:
-  - `docs/functional_requirements.md`
-  - `docs/face_detection_pipeline.md`
-  - `docs/additional_requirements.md`
+- Consolidated requirements: `docs/requirements.md`
 - Tag `v1.0.0` marks the previous implementation for comparison.
