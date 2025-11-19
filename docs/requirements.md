@@ -30,7 +30,7 @@ Single-source reference for the reboot. Derived from the v1.0.0 behavior and cap
 - Grid of clustered faces showing current name and predicted name/confidence.
 - Interactions: single-click toggles selection (inactive shown grayscale); double-click image accepts predicted name; double-click name opens rename dialog; delete button removes face from DB and refreshes cluster.
 - Bulk assign name to selected faces (clears cluster_id); select/deselect all; navigate clusters with wrap-around; names list sidebar stays updated; status shows cluster position/count.
- - Right-click on face shows full-image preview with red bbox and labels (name/predicted) overlaid; shared preview window behavior consistent across tabs.
+- Right-click on face shows full-image preview with red bbox and labels (name/predicted) overlaid; shared preview window behavior consistent across tabs.
 
 ### Per-Person Analysis (Name Analysis)
 - List of unique names; rename a person globally (update all faces).
