@@ -1,28 +1,23 @@
-# face-and-names
-my test project for AI driven codes that is slightly more complex. No classic coding - english is the coding language (actually it is python)
+# face-and-names (rewrite plan)
 
-# todo
-- add code to check if the yolov11n-face.pt is loaded. if not load it at startup
-- filter on face analysis on the images of the circles on top (month of image)
-- add a filter to find images (person 1 and person 2 and not person 3)
-- improve startup time drastically, only make important stuff
+We’re starting fresh on branch `rewrite/next-gen`, using v1.0.0 as the frozen reference. This README tracks the greenfield plan; the legacy code and docs stay available for lookup.
 
-## Face Import Folder Structure
+## Goals
+- Streamlined photo ingest → detect → cluster → name → predict/review → browse/annotate.
+- Fast startup and responsive UI on large libraries.
+- Clear, testable requirements (see `docs/functional_requirements.md` and `docs/face_detection_pipeline.md`).
+- Clean data contracts and background task patterns defined up front.
 
-When you import photos, the application records each image using a `(base_folder, sub_folder, filename)` triple:
+## Immediate Steps
+1) Finalize user stories and edge cases per flow (import, clustering, naming, prediction, browsing).
+2) Set performance budgets (startup, ingest throughput, max UI stall) and agree on async/worker architecture.
+3) Design the new schema and model artifact contracts after requirements are locked.
+4) Define shared interaction rules (click/double-click, delete, preview, batch accept, progress/cancel).
+5) Draft a minimal UX map/wireframe for the core tabs before coding.
 
-- `base_folder` – the absolute path of the directory you selected in the UI (or, if the image is in a deeper tree, the parent of the folder that directly contains the file)
-- `sub_folder` – the leaf folder that contains the image; it is stored as an empty string when the file lives directly inside the base folder
-- `filename` – the file name (e.g., `IMG_0001.JPG`)
-
-This allows imports from both `…/Photos/<album>/<image>.jpg` hierarchies and flat folders without crashing `_get_image_location`.
-
-## Model Artifacts
-
-Trained recognition assets live in `face_recognition_models/` and are now saved as `state_dict`s:
-
-- `mtcnn_complete.pth` – weights for the detector backbone (`facenet_pytorch.MTCNN`)
-- `face_encoder_complete.pth` – weights for `facenet_pytorch.InceptionResnetV1`
-- `face_classifier.joblib` / `label_encoder.joblib` – scikit-learn artifacts built from the embeddings
-
-During inference, every face crop passes through the shared preprocessing utility (`src/utils/face_preprocessing.py`) so that detection, training, and prediction all normalize images identically.
+## Reference
+- Legacy behavior and requirements distilled in:
+  - `docs/functional_requirements.md`
+  - `docs/face_detection_pipeline.md`
+  - `docs/additional_requirements.md`
+- Tag `v1.0.0` marks the previous implementation for comparison.
