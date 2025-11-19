@@ -110,6 +110,8 @@ Single-source reference for the reboot. Derived from the v1.0.0 behavior and cap
 - Tooltips and labels must be informative (e.g., “Face recognition confidence”); onboarding hints where workflows are complex.
 - Consolidated navigation: clarify which “pages” are needed (e.g., ingest, cluster, name, prediction review, insights) and reduce redundancy between similar prediction/naming views.
 - Progress everywhere long actions happen; no expensive work before a tab is opened.
+- Shared components: one reusable face tile/card implementation (image, name, predicted name + confidence, delete control, right-click preview) used across all views to ensure consistency and reduce duplication.
+- Shared prediction service: single prediction pipeline callable from different flows (inline during ingest, batch prediction, review), avoiding duplicated logic or divergent thresholds.
 
 ### Performance-First Design
 - Lazy-load models/resources per feature; preload health checks asynchronously.
