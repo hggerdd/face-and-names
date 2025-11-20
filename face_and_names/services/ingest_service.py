@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, Tuple
 
 import imagehash
 from PIL import Image, ImageOps, ExifTags
@@ -73,14 +74,14 @@ class IngestService:
         processed = 0
         skipped_existing = 0
         errors: List[str] = []
-        images = list(self._iter_images(resolved_folders, recursive=opts.recursive))
-        total = len(images)
+        paths = list(self._iter_images(resolved_folders, recursive=opts.recursive))
+        total = len(paths)
 
         LOGGER.info("Ingest session %s started: %d folders, %d images queued", session_id, len(resolved_folders), total)
 
-        for image_path in images:
+        for image_path, raw_bytes in self._load_images(paths):
             try:
-                is_new, thumb_bytes = self._ingest_one(session_id, image_path)
+                is_new, thumb_bytes = self._ingest_one(session_id, image_path, raw_bytes)
                 if is_new:
                     processed += 1
                     self.sessions.increment_image_count(session_id, delta=1)
@@ -93,7 +94,7 @@ class IngestService:
             if progress_cb is not None:
                 last_image_name = None
                 last_thumbnail = None
-                if is_new and processed > 0 and processed % 10 == 0:
+                if is_new and (processed == 1 or processed % 10 == 0):
                     last_image_name = image_path.name
                     last_thumbnail = thumb_bytes
                 progress_cb(
@@ -147,12 +148,9 @@ class IngestService:
                 if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
                     yield path
 
-    def _ingest_one(self, session_id: int, image_path: Path) -> tuple[bool, bytes | None]:
+    def _ingest_one(self, session_id: int, image_path: Path, raw_bytes: bytes) -> tuple[bool, bytes | None]:
         # Compute hashes and normalized image bytes in a single pass
-        raw_bytes = image_path.read_bytes()
-        normalized_bytes, perceptual_hash, width, height, thumb_bytes, metadata_map = self._process_image(
-            raw_bytes
-        )
+        normalized_bytes, perceptual_hash, width, height, thumb_bytes, metadata_map = self._process_image(raw_bytes)
         content_hash = hashlib.sha256(normalized_bytes).digest()
 
         existing_id = self.images.get_by_content_hash(content_hash)
@@ -227,3 +225,13 @@ class IngestService:
             else:
                 metadata[tag_name] = str(value)
         return metadata
+
+    def _load_images(self, paths: Sequence[Path], max_workers: int = 4) -> Iterable[Tuple[Path, bytes]]:
+        """Load image bytes in parallel to reduce IO latency (FR-076)."""
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for path, data in executor.map(self._read_file, paths):
+                yield path, data
+
+    @staticmethod
+    def _read_file(path: Path) -> Tuple[Path, bytes]:
+        return path, path.read_bytes()
