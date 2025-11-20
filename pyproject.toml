@@ -9,12 +9,15 @@ authors = [
   { name = "Project Team" }
 ]
 dependencies = [
-  "pyqt6>=6.6",
-  "pillow>=10.0.0",
-  "imagehash>=4.3.1",
-  "exifread>=3.0.0",
-  "scikit-learn>=1.4.0",
-  "ultralytics>=8.1.0",
+  "pyqt6==6.6.1",
+  "pyqt6-qt6==6.6.1",
+  "pillow==10.4.0",
+  "imagehash==4.3.2",
+  "exifread==3.0.0",
+  "scikit-learn==1.5.2",
+  "torch==2.2.2+cpu",
+  "torchvision==0.17.2+cpu",
+  "ultralytics==8.2.103",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +32,14 @@ dev = [
 
 [tool.uv]
 # Pin a constraint file or index as needed; update once dependencies are finalized.
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [tool.ruff]
 target-version = "py311"

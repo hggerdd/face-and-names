@@ -25,4 +25,4 @@ def compute_perceptual_hash(path: Path) -> int:
     with Image.open(BytesIO(normalized)) as image:
         image.load()
         phash = imagehash.phash(image.convert("RGB"))
-    return int(phash)
+    return int(str(phash), 16)

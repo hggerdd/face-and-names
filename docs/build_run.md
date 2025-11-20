@@ -21,6 +21,7 @@ This is a pre-code checklist for environment and tooling. It assumes Python with
 - Lint: `uv run ruff check .`
 - Format: `uv run ruff format .`
 - Tests: `uv run pytest`
+- CPU-only torch: use the PyTorch CPU wheel index wired in `pyproject.toml` and add `--index-strategy unsafe-best-match` when syncing/running to let uv mix PyPI with the PyTorch index, e.g., `UV_LINK_MODE=copy uv sync --index-strategy unsafe-best-match` and `uv run --index-strategy unsafe-best-match pytest`.
 
 ## Data & Models
 - Detector default: YOLO via `ultralytics` using bundled `yolov11n-face.pt` (configure path).
