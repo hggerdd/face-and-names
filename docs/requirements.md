@@ -28,6 +28,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-071** The application shall allow choosing or creating the DB Root (SQLite file location) at runtime, treating that folder as the scope for ingest and relative paths. **[DER][USER]**
 - **FR-072** Thumbnails generated during ingest shall be stored inside the SQLite database (BLOB) rather than the filesystem cache. **[DER][USER]**
 - **FR-073** On app start, the last folder used for ingest shall be preselected automatically; if the user makes no changes, ingest uses that folder. **[DER][USER]**
+- **FR-074** During ingest the UI shall display the current folder and, for every 10th processed image, show its filename and a thumbnail preview. **[DER][USER]**
 - **FR-006** For each ingested image, the system shall correct EXIF-based orientation, extract EXIF/IPTC metadata, generate a JPEG thumbnail (≤ ~500px width), and persist these data. **[REQ][LEG]**
 - **FR-007** The system shall track import sessions recording folder_count and incrementally recording image_count as images are processed. **[REQ]**
 - **FR-008** The system shall record images with zero detected faces while still storing their thumbnails and metadata. **[REQ][LEG]**

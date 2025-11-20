@@ -45,6 +45,9 @@ class IngestProgress:
     skipped_existing: int
     total: int
     errors: list[str]
+    current_folder: str | None = None
+    last_image_name: str | None = None
+    last_thumbnail: bytes | None = None
 
 
 class IngestService:
@@ -78,7 +81,7 @@ class IngestService:
 
         for image_path in images:
             try:
-                is_new = self._ingest_one(session_id, image_path)
+                is_new, thumb_bytes = self._ingest_one(session_id, image_path)
                 if is_new:
                     processed += 1
                     self.sessions.increment_image_count(session_id, delta=1)
@@ -89,6 +92,11 @@ class IngestService:
                 LOGGER.exception("Failed to ingest %s", image_path)
                 errors.append(f"{image_path}: {exc}")
             if progress_cb is not None:
+                last_image_name = None
+                last_thumbnail = None
+                if is_new and processed > 0 and processed % 10 == 0:
+                    last_image_name = image_path.name
+                    last_thumbnail = thumb_bytes
                 progress_cb(
                     IngestProgress(
                         session_id=session_id,
@@ -96,6 +104,9 @@ class IngestService:
                         skipped_existing=skipped_existing,
                         total=total,
                         errors=errors.copy(),
+                        current_folder=str(image_path.parent),
+                        last_image_name=last_image_name,
+                        last_thumbnail=last_thumbnail,
                     )
                 )
 
@@ -137,7 +148,7 @@ class IngestService:
                 if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
                     yield path
 
-    def _ingest_one(self, session_id: int, image_path: Path) -> bool:
+    def _ingest_one(self, session_id: int, image_path: Path) -> tuple[bool, bytes | None]:
         # Compute hashes and normalized image bytes
         raw_bytes = image_path.read_bytes()
         normalized = normalize_orientation(raw_bytes)
@@ -146,7 +157,7 @@ class IngestService:
 
         existing_id = self.images.get_by_content_hash(content_hash)
         if existing_id is not None:
-            return False
+            return False, None
 
         relative_path = image_path.resolve().relative_to(self.db_root.resolve())
         sub_folder = str(relative_path.parent).replace("\\", "/")
@@ -154,6 +165,7 @@ class IngestService:
         has_faces = 0  # detection not wired yet
         import_id = session_id
 
+        thumb_bytes = make_thumbnail(normalized, max_width=500)
         image_id = self.images.add(
             import_id=import_id,
             relative_path=str(relative_path).replace("\\", "/"),
@@ -165,12 +177,12 @@ class IngestService:
             height=height,
             orientation_applied=1,
             has_faces=has_faces,
-            thumbnail_blob=make_thumbnail(normalized, max_width=500),
+            thumbnail_blob=thumb_bytes,
             size_bytes=len(raw_bytes),
         )
 
         self.metadata.add_entries(image_id, extract_metadata(raw_bytes), meta_type="EXIF")
-        return True
+        return True, thumb_bytes
 
     def _compute_perceptual_hash_and_size(self, image_bytes: bytes) -> tuple[int, int, int]:
         with Image.open(BytesIO(image_bytes)) as image:

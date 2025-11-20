@@ -21,7 +21,9 @@ from PyQt6.QtWidgets import (
     QWidget,
     QLineEdit,
     QMessageBox,
+    QLabel,
 )
+from PyQt6.QtGui import QPixmap
 
 from face_and_names.app_context import AppContext, initialize_app, load_last_folder, save_last_folder
 from face_and_names.models.db import initialize_database
@@ -66,6 +68,11 @@ class ImportPage(QWidget):
         self.recursive_checkbox = QCheckBox("Include subfolders (recursive)")
         self.recursive_checkbox.setChecked(True)
         self.status_label = QLabel("Idle")
+        self.folder_label = QLabel("Current folder: -")
+        self.image_label = QLabel("Last image: -")
+        self.thumb_label = QLabel()
+        self.thumb_label.setFixedSize(160, 160)
+        self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.ingest_button = QPushButton("Start Ingest")
         self.refresh_button = QPushButton("Refresh folder list")
         self.refresh_button.clicked.connect(self._load_subfolders)
@@ -97,6 +104,9 @@ class ImportPage(QWidget):
         # Controls
         self.ingest_button.clicked.connect(self._start_ingest)
         layout.addWidget(self.ingest_button)
+        layout.addWidget(self.folder_label)
+        layout.addWidget(self.image_label)
+        layout.addWidget(self.thumb_label)
         layout.addWidget(self.status_label)
 
         layout.addStretch(1)
@@ -159,6 +169,17 @@ class ImportPage(QWidget):
         self.status_label.setText(
             f"Ingesting… {progress.processed}/{progress.total} processed, skipped {progress.skipped_existing}"
         )
+        if progress.current_folder:
+            self.folder_label.setText(f"Current folder: {progress.current_folder}")
+        if progress.last_image_name:
+            self.image_label.setText(f"Last 10th image: {progress.last_image_name}")
+        if progress.last_thumbnail:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(progress.last_thumbnail):
+                scaled = pixmap.scaled(
+                    self.thumb_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                )
+                self.thumb_label.setPixmap(scaled)
 
     def _prefill_last_folder(self) -> None:
         """Preselect the last used folder if available and in scope."""
