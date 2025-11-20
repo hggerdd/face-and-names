@@ -51,6 +51,7 @@ class IngestProgress:
     current_folder: str | None = None
     last_image_name: str | None = None
     last_thumbnail: bytes | None = None
+    last_face_thumbs: list[bytes] | None = None
 
 
 class IngestService:
@@ -91,7 +92,9 @@ class IngestService:
             try:
                 if result.error:
                     raise result.error
-                is_new, thumb_bytes = self._ingest_one(session_id, image_path, result.raw_bytes, result, detector)
+                is_new, thumb_bytes, face_thumbs = self._ingest_one(
+                    session_id, image_path, result.raw_bytes, result, detector
+                )
                 if is_new:
                     processed += 1
                     self.sessions.increment_image_count(session_id, delta=1)
@@ -104,9 +107,11 @@ class IngestService:
             if progress_cb is not None:
                 last_image_name = None
                 last_thumbnail = None
+                last_faces = None
                 if is_new and (processed == 1 or processed % 10 == 0):
                     last_image_name = image_path.name
                     last_thumbnail = thumb_bytes
+                    last_faces = face_thumbs
                 progress_cb(
                     IngestProgress(
                         session_id=session_id,
@@ -117,6 +122,7 @@ class IngestService:
                         current_folder=str(image_path.parent),
                         last_image_name=last_image_name,
                         last_thumbnail=last_thumbnail,
+                        last_face_thumbs=last_faces,
                     )
                 )
 
@@ -165,7 +171,7 @@ class IngestService:
         raw_bytes: bytes,
         processed: "ProcessedImage",
         detector: DetectorAdapter | None,
-    ) -> tuple[bool, bytes | None]:
+    ) -> tuple[bool, bytes | None, list[bytes] | None]:
         # Hashes already computed in worker; reuse
         normalized_bytes = processed.normalized_bytes
         perceptual_hash = processed.perceptual_hash
@@ -177,7 +183,7 @@ class IngestService:
 
         existing_id = self.images.get_by_content_hash(content_hash)
         if existing_id is not None:
-            return False, None
+            return False, None, None
 
         relative_path = image_path.resolve().relative_to(self.db_root.resolve())
         sub_folder = str(relative_path.parent).replace("\\", "/")
@@ -202,11 +208,12 @@ class IngestService:
 
         self.metadata.add_entries(image_id, metadata_map, meta_type="EXIF")
 
+        face_preview: list[bytes] | None = None
         if detector is not None:
             faces = self._detect_faces(detector, normalized_bytes, width, height)
-            self._persist_faces(faces, image_id, import_id, normalized_bytes, image_path)
+            face_preview = self._persist_faces(faces, image_id, import_id, normalized_bytes, image_path)
 
-        return True, thumb_bytes
+        return True, thumb_bytes, face_preview
 
     def _process_image(self, raw_bytes: bytes) -> tuple[bytes, int, int, int, bytes, dict[str, str]]:
         """Return normalized bytes, phash, dimensions, thumbnail bytes, and metadata."""
@@ -292,32 +299,32 @@ class IngestService:
         import_id: int,
         normalized_bytes: bytes,
         image_path: Path,
-    ) -> None:
+    ) -> list[bytes]:
+        preview: list[bytes] = []
         if not detections:
-            return
-        face_cache_dir = self.db_root / "cache" / "faces" / str(import_id)
-        face_cache_dir.mkdir(parents=True, exist_ok=True)
+            return preview
         with Image.open(BytesIO(normalized_bytes)) as image:
             image.load()
-            for det in detections:
-                face_id = self.faces.add(
+            for idx, det in enumerate(detections):
+                x, y, w, h = det.bbox_abs
+                crop = image.crop((x, y, x + w, y + h))
+                buf = BytesIO()
+                crop.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
+                crop_bytes = buf.getvalue()
+                self.faces.add(
                     image_id=image_id,
                     bbox_abs=det.bbox_abs,
                     bbox_rel=det.bbox_rel,
-                    face_crop_path="",
+                    face_crop_blob=crop_bytes,
                     cluster_id=None,
                     person_id=None,
                     predicted_person_id=None,
                     prediction_confidence=det.confidence,
                     provenance="detected",
                 )
-                crop_path = face_cache_dir / f"{face_id}.jpg"
-                x, y, w, h = det.bbox_abs
-                crop = image.crop((x, y, x + w, y + h))
-                buf = BytesIO()
-                crop.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
-                crop_path.write_bytes(buf.getvalue())
-                self.faces.set_crop_path(face_id, str(Path("cache") / "faces" / str(import_id) / f"{face_id}.jpg"))
+                if idx < 5:
+                    preview.append(crop_bytes)
+        return preview
 
     def _process_single_path(self, path: Path) -> "ProcessedImage":
         try:

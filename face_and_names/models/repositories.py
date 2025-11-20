@@ -119,7 +119,7 @@ class FaceRepository:
         image_id: int,
         bbox_abs: Sequence[float],
         bbox_rel: Sequence[float],
-        face_crop_path: str,
+        face_crop_blob: bytes,
         provenance: str,
         cluster_id: int | None = None,
         person_id: int | None = None,
@@ -133,7 +133,7 @@ class FaceRepository:
             INSERT INTO face (
                 image_id, bbox_x, bbox_y, bbox_w, bbox_h,
                 bbox_rel_x, bbox_rel_y, bbox_rel_w, bbox_rel_h,
-                face_crop_path, cluster_id, person_id, predicted_person_id,
+                face_crop_blob, cluster_id, person_id, predicted_person_id,
                 prediction_confidence, provenance
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -147,7 +147,7 @@ class FaceRepository:
                 bry,
                 brw,
                 brh,
-                face_crop_path,
+                sqlite3.Binary(face_crop_blob),
                 cluster_id,
                 person_id,
                 predicted_person_id,
@@ -156,12 +156,6 @@ class FaceRepository:
             ),
         )
         return int(cursor.lastrowid)
-
-    def set_crop_path(self, face_id: int, crop_path: str) -> None:
-        self.conn.execute(
-            "UPDATE face SET face_crop_path = ? WHERE id = ?",
-            (crop_path, face_id),
-        )
 
 
 class PersonRepository:
