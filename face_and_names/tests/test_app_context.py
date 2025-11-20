@@ -7,7 +7,9 @@ from face_and_names.app_context import (
     AppContext,
     initialize_app,
     load_last_folder,
+    load_last_db_path,
     resolve_db_path,
+    save_last_db_path,
     save_last_folder,
 )
 
@@ -46,3 +48,15 @@ def test_last_folder_persistence(tmp_path: Path) -> None:
     loaded = load_last_folder(cfg_dir)
 
     assert loaded == folder
+
+
+def test_last_db_path_used_when_present(monkeypatch, tmp_path: Path) -> None:
+    config_dir = tmp_path / "cfg"
+    db_path = tmp_path / "custom" / "faces.db"
+    config_path = config_dir / "config.toml"
+
+    save_last_db_path(config_dir, db_path)
+    context = initialize_app(config_path=config_path)
+
+    assert context.db_path == db_path
+    assert load_last_db_path(config_dir) == db_path

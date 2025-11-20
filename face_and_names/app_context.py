@@ -64,10 +64,12 @@ def initialize_app(
     Load configuration, set up logging, initialize the database schema, and return an AppContext.
     """
     config_path = config_path or default_config_path()
+    config_dir = config_path.parent
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config = load_config(config_path)
 
-    resolved_db_path = db_path or resolve_db_path(config, base_dir=base_dir)
+    last_db = load_last_db_path(config_dir)
+    resolved_db_path = db_path or last_db or resolve_db_path(config, base_dir=base_dir)
     conn = initialize_database(resolved_db_path)
 
     log_dir = resolved_db_path.parent / "logs"
@@ -96,3 +98,24 @@ def save_last_folder(config_dir: Path, folder: Path) -> None:
     """Persist last folder selection for ingest defaults."""
     config_dir.mkdir(parents=True, exist_ok=True)
     last_folder_file(config_dir).write_text(str(folder), encoding="utf-8")
+
+
+def last_db_file(config_dir: Path) -> Path:
+    return config_dir / "last_db.txt"
+
+
+def load_last_db_path(config_dir: Path) -> Path | None:
+    """Load last DB path if recorded."""
+    lf = last_db_file(config_dir)
+    if not lf.exists():
+        return None
+    try:
+        return Path(lf.read_text(encoding="utf-8").strip())
+    except Exception:
+        return None
+
+
+def save_last_db_path(config_dir: Path, db_path: Path) -> None:
+    """Persist last DB path selection."""
+    config_dir.mkdir(parents=True, exist_ok=True)
+    last_db_file(config_dir).write_text(str(db_path), encoding="utf-8")

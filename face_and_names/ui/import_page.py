@@ -25,7 +25,14 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap
 
-from face_and_names.app_context import AppContext, initialize_app, load_last_folder, save_last_folder
+from face_and_names.app_context import (
+    AppContext,
+    initialize_app,
+    load_last_folder,
+    load_last_db_path,
+    save_last_db_path,
+    save_last_folder,
+)
 from face_and_names.models.db import initialize_database
 from face_and_names.services.ingest_service import IngestOptions, IngestService
 
@@ -126,6 +133,7 @@ class ImportPage(QWidget):
         self.context = new_context
         self.db_root = new_root
         self.config_dir = new_context.config_path.parent
+        save_last_db_path(self.config_dir, new_db_path)
         self.db_path_edit.setText(str(self.db_root))
         self.source_list.clear()
         self.on_context_changed(new_context)
