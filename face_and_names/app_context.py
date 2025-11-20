@@ -30,6 +30,7 @@ class AppContext:
     config: dict[str, Any]
     db_path: Path
     conn: sqlite3.Connection
+    config_path: Path
 
 
 def default_config_dir() -> Path:
@@ -72,4 +73,26 @@ def initialize_app(
     log_dir = resolved_db_path.parent / "logs"
     setup_logging(log_dir=log_dir, level=str(config.get("logging", {}).get("level", "INFO")))
 
-    return AppContext(config=config, db_path=resolved_db_path, conn=conn)
+    return AppContext(config=config, db_path=resolved_db_path, conn=conn, config_path=config_path)
+
+
+def last_folder_file(config_dir: Path) -> Path:
+    """Return path to the persisted last-folder marker."""
+    return config_dir / "last_folder.txt"
+
+
+def load_last_folder(config_dir: Path) -> Path | None:
+    """Load last folder if recorded."""
+    lf = last_folder_file(config_dir)
+    if not lf.exists():
+        return None
+    try:
+        return Path(lf.read_text(encoding="utf-8").strip())
+    except Exception:
+        return None
+
+
+def save_last_folder(config_dir: Path, folder: Path) -> None:
+    """Persist last folder selection for ingest defaults."""
+    config_dir.mkdir(parents=True, exist_ok=True)
+    last_folder_file(config_dir).write_text(str(folder), encoding="utf-8")

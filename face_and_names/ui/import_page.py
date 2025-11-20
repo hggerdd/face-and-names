@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
 )
 
-from face_and_names.app_context import AppContext, initialize_app
+from face_and_names.app_context import AppContext, initialize_app, load_last_folder, save_last_folder
 from face_and_names.models.db import initialize_database
 from face_and_names.services.ingest_service import IngestOptions, IngestService
 
@@ -52,6 +52,7 @@ class ImportPage(QWidget):
         self.context = context
         self.on_context_changed = on_context_changed
         self.db_root = context.db_path.parent
+        self.config_dir = context.config_path.parent
 
         self.db_path_edit = QLineEdit(str(self.db_root))
         self.db_path_edit.setReadOnly(True)
@@ -94,6 +95,7 @@ class ImportPage(QWidget):
 
         layout.addStretch(1)
         self.setLayout(layout)
+        self._prefill_last_folder()
 
     def _choose_db_root(self) -> None:
         chosen = QFileDialog.getExistingDirectory(self, "Select DB Root")
@@ -106,10 +108,12 @@ class ImportPage(QWidget):
         self.context.conn.close()
         self.context = new_context
         self.db_root = new_root
+        self.config_dir = new_context.config_path.parent
         self.db_path_edit.setText(str(self.db_root))
         self.source_list.clear()
         self.on_context_changed(new_context)
         self.status_label.setText("DB Root updated.")
+        self._prefill_last_folder()
 
     def _add_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Add Folder Under DB Root", str(self.db_root))
@@ -123,6 +127,7 @@ class ImportPage(QWidget):
             return
         item = QListWidgetItem(str(folder_path))
         self.source_list.addItem(item)
+        save_last_folder(self.config_dir, folder_path)
 
     def _start_ingest(self) -> None:
         folders = [Path(self.source_list.item(i).text()) for i in range(self.source_list.count())]
@@ -154,3 +159,14 @@ class ImportPage(QWidget):
             self.status_label.setText(
                 f"Ingest finished: processed {progress.processed}, skipped {progress.skipped_existing}"
             )
+
+    def _prefill_last_folder(self) -> None:
+        """Preselect the last used folder if available and in scope."""
+        last = load_last_folder(self.config_dir)
+        if last and last.exists():
+            try:
+                last.resolve().relative_to(self.db_root.resolve())
+            except Exception:
+                return
+            self.source_list.clear()
+            self.source_list.addItem(QListWidgetItem(str(last)))
