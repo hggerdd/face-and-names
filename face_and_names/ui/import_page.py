@@ -57,10 +57,13 @@ class ImportPage(QWidget):
         self.db_path_edit = QLineEdit(str(self.db_root))
         self.db_path_edit.setReadOnly(True)
         self.source_list = QListWidget()
+        self.source_list.itemChanged.connect(self._on_item_changed)
         self.recursive_checkbox = QCheckBox("Include subfolders (recursive)")
         self.recursive_checkbox.setChecked(True)
         self.status_label = QLabel("Idle")
         self.ingest_button = QPushButton("Start Ingest")
+        self.refresh_button = QPushButton("Refresh folder list")
+        self.refresh_button.clicked.connect(self._load_subfolders)
 
         self._build_ui()
 
@@ -79,10 +82,8 @@ class ImportPage(QWidget):
 
         # Source folders list
         src_row = QHBoxLayout()
-        src_row.addWidget(QLabel("Source folders under DB Root:"))
-        add_folder = QPushButton("Add folder…")
-        add_folder.clicked.connect(self._add_folder)
-        src_row.addWidget(add_folder)
+        src_row.addWidget(QLabel("Folders under DB Root (check to ingest):"))
+        src_row.addWidget(self.refresh_button)
         layout.addLayout(src_row)
         layout.addWidget(self.source_list)
 
@@ -95,6 +96,7 @@ class ImportPage(QWidget):
 
         layout.addStretch(1)
         self.setLayout(layout)
+        self._load_subfolders()
         self._prefill_last_folder()
 
     def _choose_db_root(self) -> None:
@@ -113,26 +115,13 @@ class ImportPage(QWidget):
         self.source_list.clear()
         self.on_context_changed(new_context)
         self.status_label.setText("DB Root updated.")
+        self._load_subfolders()
         self._prefill_last_folder()
 
-    def _add_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Add Folder Under DB Root", str(self.db_root))
-        if not folder:
-            return
-        folder_path = Path(folder)
-        try:
-            folder_path.resolve().relative_to(self.db_root.resolve())
-        except Exception:
-            QMessageBox.warning(self, "Out of scope", "Folder must be inside the DB Root.")
-            return
-        item = QListWidgetItem(str(folder_path))
-        self.source_list.addItem(item)
-        save_last_folder(self.config_dir, folder_path)
-
     def _start_ingest(self) -> None:
-        folders = [Path(self.source_list.item(i).text()) for i in range(self.source_list.count())]
+        folders = self._checked_folders()
         if not folders:
-            QMessageBox.warning(self, "No folders", "Add at least one folder to ingest.")
+            QMessageBox.warning(self, "No folders", "Select at least one folder to ingest.")
             return
         self.ingest_button.setEnabled(False)
         self.status_label.setText("Ingest running…")
@@ -164,9 +153,36 @@ class ImportPage(QWidget):
         """Preselect the last used folder if available and in scope."""
         last = load_last_folder(self.config_dir)
         if last and last.exists():
-            try:
-                last.resolve().relative_to(self.db_root.resolve())
-            except Exception:
-                return
-            self.source_list.clear()
-            self.source_list.addItem(QListWidgetItem(str(last)))
+            for i in range(self.source_list.count()):
+                item = self.source_list.item(i)
+                if Path(item.text()) == last:
+                    item.setCheckState(Qt.CheckState.Checked)
+                    break
+
+    def _load_subfolders(self) -> None:
+        """Populate list with subfolders under DB root."""
+        self.source_list.blockSignals(True)
+        self.source_list.clear()
+        root = self.db_root
+        if not root.exists():
+            root.mkdir(parents=True, exist_ok=True)
+        items = [root]
+        items.extend(sorted({p for p in root.rglob("*") if p.is_dir()}))
+        for path in items:
+            rel = path
+            item = QListWidgetItem(str(rel))
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.source_list.addItem(item)
+        self.source_list.blockSignals(False)
+
+    def _checked_folders(self) -> list[Path]:
+        return [
+            Path(self.source_list.item(i).text())
+            for i in range(self.source_list.count())
+            if self.source_list.item(i).checkState() == Qt.CheckState.Checked
+        ]
+
+    def _on_item_changed(self, item: QListWidgetItem) -> None:
+        if item.checkState() == Qt.CheckState.Checked:
+            save_last_folder(self.config_dir, Path(item.text()))
