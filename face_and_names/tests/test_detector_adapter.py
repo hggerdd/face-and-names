@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+ultralytics = pytest.importorskip("ultralytics")
+
 from face_and_names.services.detector_adapter import DetectorAdapter
 
 
