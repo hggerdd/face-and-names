@@ -9,6 +9,7 @@ DEFAULTS: dict[str, object] = {
         "theme": "system",
         "density": "comfortable",
     },
+    "db": {"path": "faces.db"},
     "device": {"preferred": "auto"},
     "workers": {"cpu_max": 2, "gpu_max": 1},
     "logging": {"level": "info"},
