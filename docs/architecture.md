@@ -37,11 +37,10 @@ This document summarizes the proposed architecture aligned to `docs/requirements
 
 ## Storage Strategy
 - DB: normalized schema per Data Model (Image, Face, ImportSession, Metadata, Person, Group, PersonGroup, Stats). Indices on hashes, person_id, cluster_id, import_id.
-- Media: thumbnails (~≤500px) and face crops stored either as BLOBs or file cache under DB Root; record paths if on-disk. Size/quality budgets documented (NFR-012).
+- Media: thumbnails (~<=500px) stored as BLOBs in SQLite (FR-072); face crops may use on-disk cache under DB Root; record paths if on-disk. Size/quality budgets documented (NFR-012).
 - Paths: store relative to DB Root; relink logic uses hashes + relative paths when root moves (FR-002, FR-056).
 - Identity: SHA-256 (primary) + 64-bit pHash; collision policy per plan (FR-003, FR-058/059).
 - Schema specifics recorded in `docs/schema.md` (numeric bbox columns; normalized aliases); dependencies in `docs/dependencies.md`.
-
 ## Configuration
 - Global: app settings (device preference, default thresholds, worker caps, logging levels).
 - DB-scoped: last folder selections, ingest options, thresholds overrides, UI preferences for that DB Root.

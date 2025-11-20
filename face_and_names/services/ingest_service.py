@@ -124,12 +124,6 @@ class IngestService:
         has_faces = 0  # detection not wired yet
         import_id = session_id
 
-        thumb_rel_base = Path("cache") / "thumbnails" / str(import_id)
-        thumb_dir = self.db_root / thumb_rel_base
-        thumb_dir.mkdir(parents=True, exist_ok=True)
-        # Insert with temporary thumbnail path; update after writing actual file.
-        temp_thumb_path = str(thumb_rel_base / "pending.jpg").replace("\\", "/")
-
         image_id = self.images.add(
             import_id=import_id,
             relative_path=str(relative_path).replace("\\", "/"),
@@ -141,14 +135,9 @@ class IngestService:
             height=height,
             orientation_applied=1,
             has_faces=has_faces,
-            thumbnail_path=temp_thumb_path,
+            thumbnail_blob=make_thumbnail(normalized, max_width=500),
             size_bytes=len(raw_bytes),
         )
-
-        final_thumb_rel = str(thumb_rel_base / f"{image_id}.jpg").replace("\\", "/")
-        thumb_path = thumb_dir / f"{image_id}.jpg"
-        thumb_path.write_bytes(make_thumbnail(normalized, max_width=500))
-        self.images.set_thumbnail_path(image_id, final_thumb_rel)
 
         self.metadata.add_entries(image_id, extract_metadata(raw_bytes), meta_type="EXIF")
         return True
