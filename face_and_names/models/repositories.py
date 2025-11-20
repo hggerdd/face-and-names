@@ -157,6 +157,12 @@ class FaceRepository:
         )
         return int(cursor.lastrowid)
 
+    def set_crop_path(self, face_id: int, crop_path: str) -> None:
+        self.conn.execute(
+            "UPDATE face SET face_crop_path = ? WHERE id = ?",
+            (crop_path, face_id),
+        )
+
 
 class PersonRepository:
     """CRUD for person records."""

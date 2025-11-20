@@ -24,10 +24,12 @@ import imagehash
 from PIL import Image, ImageOps, ExifTags
 
 from face_and_names.models.repositories import (
+    FaceRepository,
     ImageRepository,
     ImportSessionRepository,
     MetadataRepository,
 )
+from face_and_names.services.detector_adapter import DetectorAdapter, FaceDetection  # type: ignore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ class IngestService:
         self.sessions = ImportSessionRepository(conn)
         self.images = ImageRepository(conn)
         self.metadata = MetadataRepository(conn)
+        self.faces = FaceRepository(conn)
         self.processing_workers = max(2, min(8, (os.cpu_count() or 4)))
 
     def start_session(
@@ -81,12 +84,14 @@ class IngestService:
 
         LOGGER.info("Ingest session %s started: %d folders, %d images queued", session_id, len(resolved_folders), total)
 
+        detector = self._load_detector()
+
         for result in self._process_paths(paths):
             image_path = result.path
             try:
                 if result.error:
                     raise result.error
-                is_new, thumb_bytes = self._ingest_one(session_id, image_path, result.raw_bytes, result)
+                is_new, thumb_bytes = self._ingest_one(session_id, image_path, result.raw_bytes, result, detector)
                 if is_new:
                     processed += 1
                     self.sessions.increment_image_count(session_id, delta=1)
@@ -159,6 +164,7 @@ class IngestService:
         image_path: Path,
         raw_bytes: bytes,
         processed: "ProcessedImage",
+        detector: DetectorAdapter | None,
     ) -> tuple[bool, bytes | None]:
         # Hashes already computed in worker; reuse
         normalized_bytes = processed.normalized_bytes
@@ -195,6 +201,11 @@ class IngestService:
         )
 
         self.metadata.add_entries(image_id, metadata_map, meta_type="EXIF")
+
+        if detector is not None:
+            faces = self._detect_faces(detector, normalized_bytes, width, height)
+            self._persist_faces(faces, image_id, import_id, normalized_bytes, image_path)
+
         return True, thumb_bytes
 
     def _process_image(self, raw_bytes: bytes) -> tuple[bytes, int, int, int, bytes, dict[str, str]]:
@@ -247,6 +258,66 @@ class IngestService:
         with ThreadPoolExecutor(max_workers=self.processing_workers) as executor:
             for result in executor.map(self._process_single_path, paths):
                 yield result
+
+    def _load_detector(self) -> DetectorAdapter | None:
+        weights = Path(__file__).resolve().parents[2] / "yolov11n-face.pt"
+        if not weights.exists():
+            LOGGER.warning("Detector weights not found at %s; skipping detection", weights)
+            return None
+        try:
+            detector = DetectorAdapter(weights_path=weights)
+            detector.load()
+            LOGGER.info("Loaded detector from %s", weights)
+            return detector
+        except Exception as exc:  # pragma: no cover
+            LOGGER.error("Failed to load detector: %s", exc)
+            return None
+
+    def _detect_faces(
+        self, detector: DetectorAdapter, normalized_bytes: bytes, width: int, height: int
+    ) -> list[FaceDetection]:
+        try:
+            with Image.open(BytesIO(normalized_bytes)) as image:
+                image.load()
+                detections = detector.detect_batch([image])[0]
+            return detections
+        except Exception as exc:  # pragma: no cover
+            LOGGER.error("Detection failed: %s", exc)
+            return []
+
+    def _persist_faces(
+        self,
+        detections: list[FaceDetection],
+        image_id: int,
+        import_id: int,
+        normalized_bytes: bytes,
+        image_path: Path,
+    ) -> None:
+        if not detections:
+            return
+        face_cache_dir = self.db_root / "cache" / "faces" / str(import_id)
+        face_cache_dir.mkdir(parents=True, exist_ok=True)
+        with Image.open(BytesIO(normalized_bytes)) as image:
+            image.load()
+            for det in detections:
+                face_id = self.faces.add(
+                    image_id=image_id,
+                    bbox_abs=det.bbox_abs,
+                    bbox_rel=det.bbox_rel,
+                    face_crop_path="",
+                    cluster_id=None,
+                    person_id=None,
+                    predicted_person_id=None,
+                    prediction_confidence=det.confidence,
+                    provenance="detected",
+                )
+                crop_path = face_cache_dir / f"{face_id}.jpg"
+                x, y, w, h = det.bbox_abs
+                crop = image.crop((x, y, x + w, y + h))
+                buf = BytesIO()
+                crop.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
+                crop_path.write_bytes(buf.getvalue())
+                self.faces.set_crop_path(face_id, str(Path("cache") / "faces" / str(import_id) / f"{face_id}.jpg"))
 
     def _process_single_path(self, path: Path) -> "ProcessedImage":
         try:
