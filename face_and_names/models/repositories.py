@@ -113,6 +113,12 @@ class FaceRepository:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+        self._has_crop_path = self._column_exists("face", "face_crop_path")
+        self._has_crop_blob = self._column_exists("face", "face_crop_blob")
+
+    def _column_exists(self, table: str, column: str) -> bool:
+        cols = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+        return column in cols
 
     def add(
         self,
@@ -128,32 +134,33 @@ class FaceRepository:
     ) -> int:
         bx, by, bw, bh = bbox_abs
         brx, bry, brw, brh = bbox_rel
+        columns = [
+            "image_id",
+            "bbox_x",
+            "bbox_y",
+            "bbox_w",
+            "bbox_h",
+            "bbox_rel_x",
+            "bbox_rel_y",
+            "bbox_rel_w",
+            "bbox_rel_h",
+        ]
+        values: list[object] = [image_id, bx, by, bw, bh, brx, bry, brw, brh]
+        if self._has_crop_path:
+            columns.append("face_crop_path")
+            values.append("")  # legacy column placeholder
+        if self._has_crop_blob:
+            columns.append("face_crop_blob")
+            values.append(sqlite3.Binary(face_crop_blob))
+        columns.extend(
+            ["cluster_id", "person_id", "predicted_person_id", "prediction_confidence", "provenance"]
+        )
+        values.extend([cluster_id, person_id, predicted_person_id, prediction_confidence, provenance])
+        placeholders = ", ".join("?" for _ in columns)
+        cols_sql = ", ".join(columns)
         cursor = self.conn.execute(
-            """
-            INSERT INTO face (
-                image_id, bbox_x, bbox_y, bbox_w, bbox_h,
-                bbox_rel_x, bbox_rel_y, bbox_rel_w, bbox_rel_h,
-                face_crop_blob, cluster_id, person_id, predicted_person_id,
-                prediction_confidence, provenance
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                image_id,
-                bx,
-                by,
-                bw,
-                bh,
-                brx,
-                bry,
-                brw,
-                brh,
-                sqlite3.Binary(face_crop_blob),
-                cluster_id,
-                person_id,
-                predicted_person_id,
-                prediction_confidence,
-                provenance,
-            ),
+            f"INSERT INTO face ({cols_sql}) VALUES ({placeholders})",
+            values,
         )
         return int(cursor.lastrowid)
 
