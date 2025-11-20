@@ -43,6 +43,7 @@ class IngestProgress:
     session_id: int
     processed: int
     skipped_existing: int
+    total: int
     errors: list[str]
 
 
@@ -57,7 +58,10 @@ class IngestService:
         self.metadata = MetadataRepository(conn)
 
     def start_session(
-        self, folders: Sequence[str | Path], options: IngestOptions | None = None
+        self,
+        folders: Sequence[str | Path],
+        options: IngestOptions | None = None,
+        progress_cb: callable | None = None,
     ) -> IngestProgress:
         opts = options or IngestOptions()
         resolved_folders = [self._resolve_folder(folder) for folder in folders]
@@ -67,8 +71,12 @@ class IngestService:
         processed = 0
         skipped_existing = 0
         errors: List[str] = []
+        images = list(self._iter_images(resolved_folders, recursive=opts.recursive))
+        total = len(images)
 
-        for image_path in self._iter_images(resolved_folders, recursive=opts.recursive):
+        LOGGER.info("Ingest session %s started: %d folders, %d images queued", session_id, len(resolved_folders), total)
+
+        for image_path in images:
             try:
                 is_new = self._ingest_one(session_id, image_path)
                 if is_new:
@@ -76,13 +84,35 @@ class IngestService:
                     self.sessions.increment_image_count(session_id, delta=1)
                 else:
                     skipped_existing += 1
+                    LOGGER.info("Skip duplicate (hash): %s", image_path)
             except Exception as exc:  # pragma: no cover - safety net
                 LOGGER.exception("Failed to ingest %s", image_path)
                 errors.append(f"{image_path}: {exc}")
+            if progress_cb is not None:
+                progress_cb(
+                    IngestProgress(
+                        session_id=session_id,
+                        processed=processed,
+                        skipped_existing=skipped_existing,
+                        total=total,
+                        errors=errors.copy(),
+                    )
+                )
 
         self.conn.commit()
+        LOGGER.info(
+            "Ingest session %s finished: processed=%d skipped=%d errors=%d",
+            session_id,
+            processed,
+            skipped_existing,
+            len(errors),
+        )
         return IngestProgress(
-            session_id=session_id, processed=processed, skipped_existing=skipped_existing, errors=errors
+            session_id=session_id,
+            processed=processed,
+            skipped_existing=skipped_existing,
+            total=total,
+            errors=errors,
         )
 
     def _resolve_folder(self, folder: str | Path) -> Path:

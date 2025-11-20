@@ -30,6 +30,7 @@ from face_and_names.services.ingest_service import IngestOptions, IngestService
 
 class IngestWorker(QObject):
     finished = pyqtSignal(object)
+    progress = pyqtSignal(object)
 
     def __init__(self, db_root: Path, folders: Sequence[Path], recursive: bool) -> None:
         super().__init__()
@@ -40,7 +41,11 @@ class IngestWorker(QObject):
     def run(self) -> None:
         conn = initialize_database(self.db_root / "faces.db")
         service = IngestService(db_root=self.db_root, conn=conn)
-        progress = service.start_session(self.folders, options=IngestOptions(recursive=self.recursive))
+        progress = service.start_session(
+            self.folders,
+            options=IngestOptions(recursive=self.recursive),
+            progress_cb=self.progress.emit,
+        )
         self.finished.emit(progress)
 
 
@@ -131,6 +136,7 @@ class ImportPage(QWidget):
         self._worker = IngestWorker(db_root=self.db_root, folders=folders, recursive=recursive)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
+        self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_ingest_finished)
         self._worker.finished.connect(self._thread.quit)
         self._worker.finished.connect(self._worker.deleteLater)
@@ -148,6 +154,11 @@ class ImportPage(QWidget):
             self.status_label.setText(
                 f"Ingest finished: processed {progress.processed}, skipped {progress.skipped_existing}"
             )
+
+    def _on_progress(self, progress) -> None:
+        self.status_label.setText(
+            f"Ingesting… {progress.processed}/{progress.total} processed, skipped {progress.skipped_existing}"
+        )
 
     def _prefill_last_folder(self) -> None:
         """Preselect the last used folder if available and in scope."""

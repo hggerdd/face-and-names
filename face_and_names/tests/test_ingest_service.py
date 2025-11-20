@@ -34,6 +34,7 @@ def test_ingest_imports_images_and_thumbnails(tmp_path: Path) -> None:
 
     assert progress.processed == 2
     assert progress.skipped_existing == 0
+    assert progress.total == 2
     assert progress.errors == []
 
     image_rows = conn.execute(
@@ -70,6 +71,7 @@ def test_ingest_skips_duplicates_by_content_hash(tmp_path: Path) -> None:
 
     assert progress.processed == 1
     assert progress.skipped_existing == 1
+    assert progress.total == 2
     count = conn.execute("SELECT COUNT(*) FROM image").fetchone()[0]
     assert count == 1
 
