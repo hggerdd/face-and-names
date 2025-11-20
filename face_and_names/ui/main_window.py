@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from face_and_names.app_context import AppContext
 from face_and_names.ui.import_page import ImportPage
+from face_and_names.ui.faces_page import FacesPage
 
 
 class MainWindow(QMainWindow):
@@ -54,7 +55,11 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        self._add_page("Faces", "Faces workspace: clusters/predictions/people views")
+        self._add_page(
+            "Faces",
+            placeholder="Faces workspace: clusters/predictions/people views",
+            widget=FacesPage(self.context),
+        )
         self._add_page(
             "Import",
             placeholder="Ingest photos from DB Root with progress/resume",
