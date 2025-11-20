@@ -8,6 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+.venv_tests
+.pytest_cache
 
 # SQLite database
 *.db

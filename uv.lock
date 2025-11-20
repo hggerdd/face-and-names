@@ -331,6 +331,11 @@ onnx = [
     { name = "onnxruntime" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.4.0" },
@@ -350,6 +355,9 @@ requires-dist = [
     { name = "torchvision", specifier = "==0.17.2+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "ultralytics", specifier = "==8.2.103" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.0.1" }]
 
 [[package]]
 name = "facenet-pytorch"

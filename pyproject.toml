@@ -49,3 +49,8 @@ extend-select = ["I"]  # import sorting
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["face_and_names/tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+]
