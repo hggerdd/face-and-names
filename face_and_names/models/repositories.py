@@ -94,6 +94,12 @@ class ImageRepository:
         row = cursor.fetchone()
         return int(row[0]) if row else None
 
+    def set_thumbnail_path(self, image_id: int, thumbnail_path: str) -> None:
+        self.conn.execute(
+            "UPDATE image SET thumbnail_path = ? WHERE id = ?",
+            (thumbnail_path, image_id),
+        )
+
 
 class MetadataRepository:
     """Metadata key/value storage per image."""
