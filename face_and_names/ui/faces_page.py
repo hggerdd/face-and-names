@@ -44,7 +44,7 @@ class FaceImageView(QGraphicsView):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setScene(QGraphicsScene(self))
-        self.setRenderHint(self.renderHints() | Qt.RenderHint.Antialiasing)
+        self.setRenderHint(self.renderHints() | Qt.Antialiasing)
         self.setStyleSheet("background: #222;")
 
     def show_image(self, pixmap: QPixmap, boxes: List[tuple[float, float, float, float]]) -> None:
