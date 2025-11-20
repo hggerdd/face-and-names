@@ -86,9 +86,13 @@ class IngestService:
         LOGGER.info("Ingest session %s started: %d folders, %d images queued", session_id, len(resolved_folders), total)
 
         detector = self._load_detector()
+        self._ensure_face_crop_column()
 
         for result in self._process_paths(paths):
             image_path = result.path
+            is_new = False
+            thumb_bytes = None
+            face_thumbs = None
             try:
                 if result.error:
                     raise result.error
@@ -265,6 +269,14 @@ class IngestService:
         with ThreadPoolExecutor(max_workers=self.processing_workers) as executor:
             for result in executor.map(self._process_single_path, paths):
                 yield result
+
+    def _ensure_face_crop_column(self) -> None:
+        """Add face_crop_blob column if missing (migration helper)."""
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(face)")}.copy()
+        if "face_crop_blob" not in cols:
+            LOGGER.warning("Adding missing face_crop_blob column to face table")
+            self.conn.execute("ALTER TABLE face ADD COLUMN face_crop_blob BLOB NOT NULL DEFAULT x'';")
+            self.conn.commit()
 
     def _load_detector(self) -> DetectorAdapter | None:
         weights = Path(__file__).resolve().parents[2] / "yolov11n-face.pt"
