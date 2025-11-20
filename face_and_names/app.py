@@ -1,6 +1,7 @@
 """
-PyQt application entry point (scaffold).
-Wires the main window shell; business logic to be added later.
+PyQt application entry point.
+
+Bootstraps configuration, logging, database initialization, and UI shell.
 """
 
 from __future__ import annotations
@@ -8,6 +9,8 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+
+from face_and_names.app_context import AppContext, initialize_app
 
 
 def _import_qt_app():
@@ -33,13 +36,15 @@ def _import_qt_app():
 
 
 def main() -> int:
-    """Start the PyQt application with a placeholder main window."""
+    """Start the PyQt application with the initial UI shell."""
     QApplication = _import_qt_app()
 
     from face_and_names.ui.main_window import MainWindow
 
+    context: AppContext = initialize_app()
+
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(context)
     window.show()
     return app.exec()
 
