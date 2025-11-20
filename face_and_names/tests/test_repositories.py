@@ -120,7 +120,7 @@ def test_face_repository_saves_faces(conn: sqlite3.Connection) -> None:
         image_id=image_id,
         bbox_abs=(1.0, 2.0, 50.0, 60.0),
         bbox_rel=(0.01, 0.02, 0.5, 0.6),
-        face_crop_path="cache/faces/1.jpg",
+        face_crop_blob=b"face",
         provenance="detected",
         cluster_id=None,
         person_id=None,

@@ -80,6 +80,7 @@ class ImportPage(QWidget):
         self.thumb_label = QLabel()
         self.thumb_label.setFixedSize(160, 160)
         self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.face_thumb_labels: list[QLabel] = []
         self.ingest_button = QPushButton("Start Ingest")
         self.refresh_button = QPushButton("Refresh folder list")
         self.refresh_button.clicked.connect(self._load_subfolders)
@@ -114,6 +115,15 @@ class ImportPage(QWidget):
         layout.addWidget(self.folder_label)
         layout.addWidget(self.image_label)
         layout.addWidget(self.thumb_label)
+        faces_row = QHBoxLayout()
+        faces_row.addWidget(QLabel("Faces:"))
+        for _ in range(5):
+            lbl = QLabel()
+            lbl.setFixedSize(64, 64)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.face_thumb_labels.append(lbl)
+            faces_row.addWidget(lbl)
+        layout.addLayout(faces_row)
         layout.addWidget(self.status_label)
 
         layout.addStretch(1)
@@ -188,6 +198,15 @@ class ImportPage(QWidget):
                     self.thumb_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
                 )
                 self.thumb_label.setPixmap(scaled)
+        if progress.last_face_thumbs is not None:
+            for lbl, data in zip(self.face_thumb_labels, progress.last_face_thumbs):
+                px = QPixmap()
+                if px.loadFromData(data):
+                    lbl.setPixmap(px.scaled(lbl.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            # clear remaining labels
+            if len(progress.last_face_thumbs) < len(self.face_thumb_labels):
+                for lbl in self.face_thumb_labels[len(progress.last_face_thumbs) :]:
+                    lbl.clear()
 
     def _prefill_last_folder(self) -> None:
         """Preselect the last used folder if available and in scope."""

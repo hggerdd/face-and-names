@@ -59,7 +59,7 @@ def _insert_face(conn: sqlite3.Connection, image_id: int) -> None:
         INSERT INTO face (
             image_id, bbox_x, bbox_y, bbox_w, bbox_h,
             bbox_rel_x, bbox_rel_y, bbox_rel_w, bbox_rel_h,
-            face_crop_path, cluster_id, person_id, predicted_person_id,
+            face_crop_blob, cluster_id, person_id, predicted_person_id,
             prediction_confidence, provenance
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
@@ -73,7 +73,7 @@ def _insert_face(conn: sqlite3.Connection, image_id: int) -> None:
             0.02,
             0.5,
             0.6,
-            "cache/faces/1.jpg",
+            b"\x00\x01",
             None,
             None,
             None,
