@@ -19,14 +19,13 @@ from pathlib import Path
 from typing import Iterable, List, Sequence
 
 import imagehash
-from PIL import Image
+from PIL import Image, ImageOps, ExifTags
 
 from face_and_names.models.repositories import (
     ImageRepository,
     ImportSessionRepository,
     MetadataRepository,
 )
-from face_and_names.utils.imaging import extract_metadata, make_thumbnail, normalize_orientation
 
 LOGGER = logging.getLogger(__name__)
 
@@ -149,11 +148,12 @@ class IngestService:
                     yield path
 
     def _ingest_one(self, session_id: int, image_path: Path) -> tuple[bool, bytes | None]:
-        # Compute hashes and normalized image bytes
+        # Compute hashes and normalized image bytes in a single pass
         raw_bytes = image_path.read_bytes()
-        normalized = normalize_orientation(raw_bytes)
-        content_hash = hashlib.sha256(normalized).digest()
-        perceptual_hash, width, height = self._compute_perceptual_hash_and_size(normalized)
+        normalized_bytes, perceptual_hash, width, height, thumb_bytes, metadata_map = self._process_image(
+            raw_bytes
+        )
+        content_hash = hashlib.sha256(normalized_bytes).digest()
 
         existing_id = self.images.get_by_content_hash(content_hash)
         if existing_id is not None:
@@ -165,7 +165,6 @@ class IngestService:
         has_faces = 0  # detection not wired yet
         import_id = session_id
 
-        thumb_bytes = make_thumbnail(normalized, max_width=500)
         image_id = self.images.add(
             import_id=import_id,
             relative_path=str(relative_path).replace("\\", "/"),
@@ -181,15 +180,50 @@ class IngestService:
             size_bytes=len(raw_bytes),
         )
 
-        self.metadata.add_entries(image_id, extract_metadata(raw_bytes), meta_type="EXIF")
+        self.metadata.add_entries(image_id, metadata_map, meta_type="EXIF")
         return True, thumb_bytes
 
-    def _compute_perceptual_hash_and_size(self, image_bytes: bytes) -> tuple[int, int, int]:
-        with Image.open(BytesIO(image_bytes)) as image:
+    def _process_image(self, raw_bytes: bytes) -> tuple[bytes, int, int, int, bytes, dict[str, str]]:
+        """Return normalized bytes, phash, dimensions, thumbnail bytes, and metadata."""
+        with Image.open(BytesIO(raw_bytes)) as image:
             image.load()
-            phash = imagehash.phash(image.convert("RGB"))
-            width, height = image.size
+            exif_data = image.getexif()
+            oriented = ImageOps.exif_transpose(image)
+            fmt = oriented.format or "PNG"
+            if fmt.upper() in {"JPEG", "JPG"} and oriented.mode not in {"RGB", "L"}:
+                oriented = oriented.convert("RGB")
+
+            buffer = BytesIO()
+            oriented.save(buffer, format=fmt)
+            normalized_bytes = buffer.getvalue()
+
+            phash = imagehash.phash(oriented.convert("RGB"))
+            width, height = oriented.size
+
+            thumb = oriented.convert("RGB")
+            thumb.thumbnail((500, 500), Image.Resampling.LANCZOS)
+            tb = BytesIO()
+            thumb.save(tb, format="JPEG", quality=85, optimize=True)
+            thumb_bytes = tb.getvalue()
+
+            metadata = self._extract_metadata(exif_data)
+
         value = int(str(phash), 16)
         if value >= (1 << 63):
             value -= 1 << 64  # store as signed 64-bit integer to fit SQLite
-        return value, width, height
+        return normalized_bytes, value, width, height, thumb_bytes, metadata
+
+    def _extract_metadata(self, exif) -> dict[str, str]:
+        """Extract EXIF metadata without reopening the image."""
+        tag_lookup = ExifTags.TAGS
+        metadata: dict[str, str] = {}
+        for tag_id, value in exif.items():
+            tag_name = tag_lookup.get(tag_id, str(tag_id))
+            if isinstance(value, bytes):
+                try:
+                    metadata[tag_name] = value.decode(errors="ignore")
+                except Exception:
+                    metadata[tag_name] = repr(value)
+            else:
+                metadata[tag_name] = str(value)
+        return metadata
