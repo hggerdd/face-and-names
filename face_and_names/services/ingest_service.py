@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
+from typing import Callable, Iterable, List, Sequence, Tuple
 
 import imagehash
 from PIL import Image, ImageOps, ExifTags
@@ -59,6 +60,7 @@ class IngestService:
         self.sessions = ImportSessionRepository(conn)
         self.images = ImageRepository(conn)
         self.metadata = MetadataRepository(conn)
+        self.processing_workers = max(2, min(8, (os.cpu_count() or 4)))
 
     def start_session(
         self,
@@ -79,9 +81,12 @@ class IngestService:
 
         LOGGER.info("Ingest session %s started: %d folders, %d images queued", session_id, len(resolved_folders), total)
 
-        for image_path, raw_bytes in self._load_images(paths):
+        for result in self._process_paths(paths):
+            image_path = result.path
             try:
-                is_new, thumb_bytes = self._ingest_one(session_id, image_path, raw_bytes)
+                if result.error:
+                    raise result.error
+                is_new, thumb_bytes = self._ingest_one(session_id, image_path, result.raw_bytes, result)
                 if is_new:
                     processed += 1
                     self.sessions.increment_image_count(session_id, delta=1)
@@ -148,9 +153,20 @@ class IngestService:
                 if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
                     yield path
 
-    def _ingest_one(self, session_id: int, image_path: Path, raw_bytes: bytes) -> tuple[bool, bytes | None]:
-        # Compute hashes and normalized image bytes in a single pass
-        normalized_bytes, perceptual_hash, width, height, thumb_bytes, metadata_map = self._process_image(raw_bytes)
+    def _ingest_one(
+        self,
+        session_id: int,
+        image_path: Path,
+        raw_bytes: bytes,
+        processed: "ProcessedImage",
+    ) -> tuple[bool, bytes | None]:
+        # Hashes already computed in worker; reuse
+        normalized_bytes = processed.normalized_bytes
+        perceptual_hash = processed.perceptual_hash
+        width = processed.width
+        height = processed.height
+        thumb_bytes = processed.thumb_bytes
+        metadata_map = processed.metadata
         content_hash = hashlib.sha256(normalized_bytes).digest()
 
         existing_id = self.images.get_by_content_hash(content_hash)
@@ -226,12 +242,49 @@ class IngestService:
                 metadata[tag_name] = str(value)
         return metadata
 
-    def _load_images(self, paths: Sequence[Path], max_workers: int = 4) -> Iterable[Tuple[Path, bytes]]:
-        """Load image bytes in parallel to reduce IO latency (FR-076)."""
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for path, data in executor.map(self._read_file, paths):
-                yield path, data
+    def _process_paths(self, paths: Sequence[Path]) -> Iterable["ProcessedImage"]:
+        """Process images in parallel (IO + CPU) then yield results for DB writes (FR-076/FR-077)."""
+        with ThreadPoolExecutor(max_workers=self.processing_workers) as executor:
+            for result in executor.map(self._process_single_path, paths):
+                yield result
 
-    @staticmethod
-    def _read_file(path: Path) -> Tuple[Path, bytes]:
-        return path, path.read_bytes()
+    def _process_single_path(self, path: Path) -> "ProcessedImage":
+        try:
+            raw_bytes = path.read_bytes()
+            normalized_bytes, phash, width, height, thumb_bytes, metadata = self._process_image(raw_bytes)
+            return ProcessedImage(
+                path=path,
+                raw_bytes=raw_bytes,
+                normalized_bytes=normalized_bytes,
+                perceptual_hash=phash,
+                width=width,
+                height=height,
+                thumb_bytes=thumb_bytes,
+                metadata=metadata,
+                error=None,
+            )
+        except Exception as exc:
+            return ProcessedImage(
+                path=path,
+                raw_bytes=b"",
+                normalized_bytes=b"",
+                perceptual_hash=0,
+                width=0,
+                height=0,
+                thumb_bytes=b"",
+                metadata={},
+                error=exc,
+            )
+
+
+@dataclass
+class ProcessedImage:
+    path: Path
+    raw_bytes: bytes
+    normalized_bytes: bytes
+    perceptual_hash: int
+    width: int
+    height: int
+    thumb_bytes: bytes
+    metadata: dict[str, str]
+    error: Exception | None
