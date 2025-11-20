@@ -37,13 +37,14 @@ def test_ingest_imports_images_and_thumbnails(tmp_path: Path) -> None:
     assert progress.errors == []
 
     image_rows = conn.execute(
-        "SELECT relative_path, sub_folder, width, height, thumbnail_path FROM image ORDER BY id"
+        "SELECT relative_path, sub_folder, width, height, thumbnail_blob FROM image ORDER BY id"
     ).fetchall()
     # Orientation applied: width/height swapped
     assert image_rows[0][0].endswith("photos/a.jpg")
     assert (image_rows[0][2], image_rows[0][3]) == (20, 10)
-    thumb_rel = image_rows[0][4]
-    assert (db_root / thumb_rel).exists()
+    thumb_blob = image_rows[0][4]
+    assert isinstance(thumb_blob, bytes)
+    assert len(thumb_blob) > 0
 
     assert image_rows[1][0].endswith("photos/nested/b.jpg")
 

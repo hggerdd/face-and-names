@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS image (
     height INTEGER NOT NULL,
     orientation_applied INTEGER NOT NULL DEFAULT 0,
     has_faces INTEGER NOT NULL DEFAULT 0,
-    thumbnail_path TEXT NOT NULL,
+    thumbnail_blob BLOB NOT NULL,
     size_bytes INTEGER NOT NULL,
     UNIQUE (content_hash)
 );

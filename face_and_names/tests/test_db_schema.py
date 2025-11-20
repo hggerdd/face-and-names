@@ -32,7 +32,7 @@ def _insert_image(
         INSERT INTO image (
             import_id, relative_path, sub_folder, filename,
             content_hash, perceptual_hash, width, height,
-            orientation_applied, has_faces, thumbnail_path, size_bytes
+            orientation_applied, has_faces, thumbnail_blob, size_bytes
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
@@ -46,7 +46,7 @@ def _insert_image(
             100,
             1,
             0,
-            "cache/thumbnails/1.jpg",
+            b"\x00\x01",
             1234,
         ),
     )

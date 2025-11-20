@@ -59,7 +59,7 @@ class ImageRepository:
         height: int,
         orientation_applied: int,
         has_faces: int,
-        thumbnail_path: str,
+        thumbnail_blob: bytes,
         size_bytes: int,
     ) -> int:
         cursor = self.conn.execute(
@@ -67,7 +67,7 @@ class ImageRepository:
             INSERT INTO image (
                 import_id, relative_path, sub_folder, filename,
                 content_hash, perceptual_hash, width, height,
-                orientation_applied, has_faces, thumbnail_path, size_bytes
+                orientation_applied, has_faces, thumbnail_blob, size_bytes
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -81,7 +81,7 @@ class ImageRepository:
                 height,
                 orientation_applied,
                 has_faces,
-                thumbnail_path,
+                sqlite3.Binary(thumbnail_blob),
                 size_bytes,
             ),
         )
@@ -93,12 +93,6 @@ class ImageRepository:
         )
         row = cursor.fetchone()
         return int(row[0]) if row else None
-
-    def set_thumbnail_path(self, image_id: int, thumbnail_path: str) -> None:
-        self.conn.execute(
-            "UPDATE image SET thumbnail_path = ? WHERE id = ?",
-            (thumbnail_path, image_id),
-        )
 
 
 class MetadataRepository:

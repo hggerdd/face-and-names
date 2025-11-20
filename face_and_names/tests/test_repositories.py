@@ -50,7 +50,7 @@ def test_image_repository_enforces_unique_content_hash(conn: sqlite3.Connection)
         height=100,
         orientation_applied=1,
         has_faces=0,
-        thumbnail_path="cache/thumbnails/1.jpg",
+        thumbnail_blob=b"thumb",
         size_bytes=2048,
     )
 
@@ -66,7 +66,7 @@ def test_image_repository_enforces_unique_content_hash(conn: sqlite3.Connection)
             height=50,
             orientation_applied=0,
             has_faces=0,
-            thumbnail_path="cache/thumbnails/2.jpg",
+            thumbnail_blob=b"thumb2",
             size_bytes=1024,
         )
 
@@ -87,7 +87,7 @@ def test_metadata_repository_adds_entries(conn: sqlite3.Connection) -> None:
         height=100,
         orientation_applied=1,
         has_faces=0,
-        thumbnail_path="cache/thumbnails/3.jpg",
+        thumbnail_blob=b"bytes",
         size_bytes=4096,
     )
 
@@ -112,7 +112,7 @@ def test_face_repository_saves_faces(conn: sqlite3.Connection) -> None:
         height=300,
         orientation_applied=1,
         has_faces=1,
-        thumbnail_path="cache/thumbnails/4.jpg",
+        thumbnail_blob=b"bytes",
         size_bytes=8192,
     )
 

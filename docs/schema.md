@@ -22,7 +22,7 @@ This document proposes the initial SQLite schema aligned to `docs/requirements.m
 - `height` INTEGER NOT NULL
 - `orientation_applied` INTEGER NOT NULL DEFAULT 0 -- EXIF correction applied flag
 - `has_faces` INTEGER NOT NULL DEFAULT 0
-- `thumbnail_path` TEXT NOT NULL -- path under cache for thumbnail JPEG
+- `thumbnail_blob` BLOB NOT NULL -- thumbnail JPEG bytes stored in DB
 - `size_bytes` INTEGER NOT NULL
 - Unique constraint on (`content_hash`) to prevent duplicate ingest; index on `perceptual_hash` for near-duplicate search; index on `import_id`.
 
@@ -92,11 +92,6 @@ This document proposes the initial SQLite schema aligned to `docs/requirements.m
 - `entity_id` INTEGER
 - `details` TEXT NOT NULL -- JSON payload for traceability
 - Index on `timestamp`, `action`, `entity_type`.
-
-## Media Cache Layout (under DB Root)
-- `cache/thumbnails/{import_id}/{image_id}.jpg`
-- `cache/faces/{import_id}/{face_id}.jpg`
-- Paths stored in DB as relative cache paths; rebuild tools regenerate on demand.
 
 ## Identity and Relink
 - Primary dedupe key: `content_hash` (SHA-256 of oriented image bytes).

@@ -6,7 +6,7 @@ Creates the navigation frame and placeholder views aligned to docs/ui_wireframes
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from face_and_names.app_context import AppContext
+from face_and_names.ui.import_page import ImportPage
 
 
 class MainWindow(QMainWindow):
@@ -54,7 +55,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self._add_page("Faces", "Faces workspace: clusters/predictions/people views")
-        self._add_page("Import", "Ingest photos from DB Root with progress/resume")
+        self._add_page(
+            "Import",
+            placeholder="Ingest photos from DB Root with progress/resume",
+            widget=ImportPage(self.context, on_context_changed=self._replace_context),
+        )
         self._add_page("Clustering", "Configure and run clustering jobs")
         self._add_page("Prediction Review", "Review and accept model predictions")
         self._add_page("People & Groups", "Manage people records, aliases, groups")
@@ -65,18 +70,21 @@ class MainWindow(QMainWindow):
         if self.nav.count():
             self.nav.setCurrentRow(0)
 
-    def _add_page(self, name: str, description: str) -> None:
-        """Add a nav item and corresponding placeholder page."""
+    def _add_page(self, name: str, placeholder: str, widget: QWidget | None = None) -> None:
+        """Add a nav item and corresponding page."""
         item = QListWidgetItem(name)
         item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.nav.addItem(item)
 
-        page = QWidget(self)
-        vbox = QVBoxLayout()
-        vbox.addWidget(QLabel(f"<b>{name}</b>"), alignment=Qt.AlignmentFlag.AlignTop)
-        vbox.addWidget(QLabel(description))
-        vbox.addStretch(1)
-        page.setLayout(vbox)
+        if widget is None:
+            page = QWidget(self)
+            vbox = QVBoxLayout()
+            vbox.addWidget(QLabel(f"<b>{name}</b>"), alignment=Qt.AlignmentFlag.AlignTop)
+            vbox.addWidget(QLabel(placeholder))
+            vbox.addStretch(1)
+            page.setLayout(vbox)
+        else:
+            page = widget
 
         self.stacked.addWidget(page)
         self._pages[name] = page
@@ -90,3 +98,7 @@ class MainWindow(QMainWindow):
         index = self.nav.row(current_items[0])
         if name in self._pages:
             self.stacked.setCurrentIndex(index)
+
+    def _replace_context(self, new_context: AppContext) -> None:
+        """Replace shared context when DB Root changes."""
+        self.context = new_context
