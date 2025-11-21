@@ -17,6 +17,7 @@ dependencies = [
   "scikit-learn==1.5.2",
   "torch==2.2.2+cpu",
   "torchvision==0.17.2+cpu",
+  "facenet-pytorch==2.6.0",
   "ultralytics==8.3.10",
 ]
 

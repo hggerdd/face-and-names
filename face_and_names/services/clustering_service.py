@@ -12,6 +12,8 @@ import imagehash
 import numpy as np
 from PIL import Image, ImageOps
 from sklearn.cluster import DBSCAN
+import torch
+from facenet_pytorch import InceptionResnetV1
 
 
 @dataclass
@@ -47,6 +49,8 @@ class ClusteringService:
 
     def __init__(self, conn) -> None:
         self.conn = conn
+        self._embed_model: InceptionResnetV1 | None = None
+        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def cluster_faces(self, options: ClusteringOptions | None = None) -> List[ClusterResult]:
         opts = options or ClusteringOptions()
@@ -132,14 +136,16 @@ class ClusteringService:
             img.load()
             if opts.feature_source == "phash":
                 ph = imagehash.phash(self._preprocess_for_hash(img, opts))
+                return np.array(ph.hash, dtype=float).reshape(-1)
             elif opts.feature_source == "phash_raw":
                 ph = imagehash.phash(img.convert("RGB"))
+                return np.array(ph.hash, dtype=float).reshape(-1)
             elif opts.feature_source == "raw":
                 return self._raw_vector(img, opts)
+            elif opts.feature_source == "embedding":
+                return self._embedding_vector(img, opts)
             else:
                 raise ValueError(f"Unsupported feature_source: {opts.feature_source}")
-        # Flatten to 64 bits and cast to float for sklearn
-        return np.array(ph.hash, dtype=float).reshape(-1)
 
     def _preprocess_for_hash(self, img: Image.Image, opts: ClusteringOptions) -> Image.Image:
         """
@@ -165,6 +171,26 @@ class ClusteringService:
         proc = proc.resize((target, target), Image.Resampling.BILINEAR)
         arr = np.asarray(proc, dtype=np.float32) / 255.0
         return arr.reshape(-1)
+
+    def _embedding_vector(self, img: Image.Image, opts: ClusteringOptions) -> np.ndarray:
+        """Compute FaceNet embedding for clustering."""
+        model = self._load_embed_model()
+        proc = img.convert("RGB").resize((160, 160), Image.Resampling.LANCZOS)
+        arr = np.asarray(proc, dtype=np.float32)
+        arr = (arr - 127.5) / 128.0
+        tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).to(self._device)
+        with torch.no_grad():
+            emb = model(tensor)
+        vec = emb.cpu().numpy().reshape(-1)
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
+        return vec
+
+    def _load_embed_model(self) -> InceptionResnetV1:
+        if self._embed_model is None:
+            self._embed_model = InceptionResnetV1(pretrained="vggface2").eval().to(self._device)
+        return self._embed_model
 
     def _run_dbscan(self, X: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
         if len(X) == 1:
