@@ -128,8 +128,9 @@ class ClusteringPage(QWidget):
         self.feature_source_combo.addItems(["pHash (normalized)", "pHash (raw)", "Raw (downscaled)", "Embedding (FaceNet)"])
         self.faces_area = QScrollArea()
         self.faces_area.setWidgetResizable(True)
+        self.faces_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.faces_inner = QWidget()
-        self.faces_layout = QHBoxLayout()
+        self.faces_layout = QGridLayout()
         self.faces_layout.setContentsMargins(8, 8, 8, 8)
         self.faces_layout.setSpacing(12)
         self.faces_inner.setLayout(self.faces_layout)
@@ -274,12 +275,12 @@ class ClusteringPage(QWidget):
             widget = item.widget()
             if widget:
                 widget.deleteLater()
-        self.faces_layout.addStretch(1)
 
     def _render_faces(self, cluster: ClusterResult) -> None:
         self._clear_faces()
         people = {p["id"]: p for p in self.people_service.list_people()}
-        for face in cluster.faces:
+        max_cols = 4
+        for idx, face in enumerate(cluster.faces):
             info = self._face_record(face.face_id)
             person_id = info["person_id"] if info else None
             predicted_person_id = info["predicted_person_id"] if info else None
@@ -302,7 +303,8 @@ class ClusteringPage(QWidget):
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
             )
-            self.faces_layout.insertWidget(self.faces_layout.count() - 1, tile)
+            row, col = divmod(idx, max_cols)
+            self.faces_layout.addWidget(tile, row, col, alignment=Qt.AlignmentFlag.AlignTop)
 
     def _face_record(self, face_id: int) -> dict:
         row = self.context.conn.execute(

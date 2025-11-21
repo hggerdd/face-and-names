@@ -44,6 +44,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QDialogButtonBox,
     QDialog,
+    QSizePolicy,
 )
 
 
@@ -97,7 +98,7 @@ class FaceTile(QWidget):
         self.image_container = QFrame()
         self.image_container.setFrameShape(QFrame.Shape.StyledPanel)
         self.image_container.setStyleSheet("QFrame { background: #111; }")
-        self.image_container.setFixedHeight(240)
+        self.image_container.setFixedHeight(200)
         img_layout = QVBoxLayout()
         img_layout.setContentsMargins(4, 4, 4, 4)
         img_layout.setSpacing(4)
@@ -113,7 +114,7 @@ class FaceTile(QWidget):
         img_layout.addLayout(top_row)
 
         self.image_label = QLabel(alignment=Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setMinimumSize(140, 140)
+        self.image_label.setMinimumSize(120, 120)
         self.image_label.setScaledContents(False)
         img_layout.addWidget(self.image_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -134,6 +135,8 @@ class FaceTile(QWidget):
         root.addWidget(self.image_container)
         root.addWidget(self.assigned_label)
         self.setLayout(root)
+        self.setMaximumWidth(200)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def _bind(self, data: FaceTileData) -> None:
         self.data = data
