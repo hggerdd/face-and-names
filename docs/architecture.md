@@ -14,7 +14,7 @@ This document summarizes the proposed architecture aligned to `docs/requirements
   - `ExportImportService`: JSON/CSV export/import, conflict handling, relink support (FR-055..057).
   - `DiagnosticsService`: health checks for models/DB/device/cache; repair tools; self-test (FR-048..054, FR-057).
 - **Data layer**: SQLite database with tables per conceptual model; thumbnails and face crops stored as BLOBs inside SQLite for portability (FR-072/FR-078); relative paths rooted at DB Root (FR-002).
-- **Background workers**: bounded pool with priority lanes; job metadata for progress (counts/histograms), cancellation tokens, and resumable state (FR-009, FR-052/053).
+- **Background workers**: in-process `JobManager` backed by a bounded pool; job metadata for progress (counts/histograms), cancellation tokens, and per-job checkpoints to enable resume (FR-009, FR-052/053). Priority lanes remain a planned enhancement.
 
 ## Data Flow (Key Operations)
 - **Ingest**: folder selection → session row → for each file in scope: normalize orientation, compute SHA-256 + pHash, skip existing → extract metadata → make thumbnail → detect faces → save bboxes/crops → optional inline prediction via `PredictionService` → update progress; failures recorded with retry/skip.

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Optional
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+SCHEMA_VERSION = 1
 
 
 def _configure_connection(conn: sqlite3.Connection) -> None:
@@ -30,6 +32,27 @@ def apply_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(load_schema_sql())
 
 
+def _get_schema_version(conn: sqlite3.Connection) -> Optional[int]:
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+    )
+    if cursor.fetchone() is None:
+        return None
+    row = conn.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()
+    return int(row[0]) if row else None
+
+
+def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
+    conn.execute(
+        """
+        INSERT INTO schema_version (id, version) VALUES (1, ?)
+        ON CONFLICT(id) DO UPDATE SET version = excluded.version
+        """,
+        (version,),
+    )
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     """Create a SQLite connection with foreign keys enabled."""
     conn = sqlite3.connect(db_path)
@@ -43,6 +66,18 @@ def initialize_database(db_path: Path) -> sqlite3.Connection:
     applying the bundled schema if the DB is new.
     """
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not db_path.exists()
     conn = connect(db_path)
-    apply_schema(conn)
+
+    current_version = _get_schema_version(conn)
+    if is_new or current_version is None:
+        apply_schema(conn)
+        _set_schema_version(conn, SCHEMA_VERSION)
+    elif current_version < SCHEMA_VERSION:
+        # Placeholder for future migrations; none defined yet.
+        _set_schema_version(conn, SCHEMA_VERSION)
+    elif current_version > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"Database schema version {current_version} is newer than supported {SCHEMA_VERSION}"
+        )
     return conn

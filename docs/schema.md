@@ -99,7 +99,7 @@ This document proposes the initial SQLite schema aligned to `docs/requirements.m
 - Relink strategy when DB Root moves: scan for matching `content_hash` within new root; if missing, fallback to perceptual hash + filename/subfolder hints; log conflicts.
 
 ## Schema Versioning and Migrations
-- Add a `schema_version` table (single row) to track applied migrations. Application startup must read this version and apply forward migrations explicitly instead of re-running the entire DDL.
+- Add a `schema_version` table (single row with id=1) to track applied migrations. Application startup must read this version and apply forward migrations explicitly instead of re-running the entire DDL.
 - Migrations should be additive and idempotent; schema changes that move media storage must include online copy steps to keep DB Roots portable.
 - Tests should cover migration from previous versions and verify foreign-key safety.
 

@@ -10,7 +10,7 @@
 - Levels: info/warn/error; debug optional via config.
 
 ## Rotation/Retention
-- Default log path under DB Root (`logs/app.log`); rotate by size (e.g., 10 MB) with limited history (e.g., 5 files). Retention configurable.
+- Default log path under DB Root (`logs/app.log`); rotate by size (default 5 MB) with limited history (default 3 files). Retention configurable via logging setup.
 
 ## Per-Feature Logging
 - Ingest: session start/stop, throughput, skipped/failed files, retry/skip outcomes.

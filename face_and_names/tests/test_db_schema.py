@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from face_and_names.models.db import initialize_database
+from face_and_names.models.db import SCHEMA_VERSION, initialize_database
 
 
 def _table_names(conn: sqlite3.Connection) -> set[str]:
@@ -88,6 +88,7 @@ def test_initialize_creates_expected_tables(tmp_path: Path) -> None:
 
     tables = _table_names(conn)
     expected = {
+        "schema_version",
         "import_session",
         "image",
         "metadata",
@@ -101,6 +102,12 @@ def test_initialize_creates_expected_tables(tmp_path: Path) -> None:
     }
 
     assert expected.issubset(tables)
+
+
+def test_schema_version_written(tmp_path: Path) -> None:
+    conn = initialize_database(tmp_path / "faces.db")
+    version = conn.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()[0]
+    assert version == SCHEMA_VERSION
 
 
 def test_unique_content_hash_enforced(tmp_path: Path) -> None:

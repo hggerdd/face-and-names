@@ -18,6 +18,7 @@ from typing import Any
 from face_and_names.config.loader import load_config
 from face_and_names.logging.setup import setup_logging
 from face_and_names.models.db import initialize_database
+from face_and_names.services.workers import JobManager
 
 ENV_CONFIG_DIR = "FACE_AND_NAMES_CONFIG_DIR"
 ENV_DB_PATH = "FACE_AND_NAMES_DB_PATH"
@@ -31,6 +32,7 @@ class AppContext:
     db_path: Path
     conn: sqlite3.Connection
     config_path: Path
+    job_manager: JobManager
 
 
 def default_config_dir() -> Path:
@@ -75,7 +77,12 @@ def initialize_app(
     log_dir = resolved_db_path.parent / "logs"
     setup_logging(log_dir=log_dir, level=str(config.get("logging", {}).get("level", "INFO")))
 
-    return AppContext(config=config, db_path=resolved_db_path, conn=conn, config_path=config_path)
+    worker_cfg = config.get("workers", {}) if isinstance(config, dict) else {}
+    job_manager = JobManager(max_workers=int(worker_cfg.get("cpu_max", 2)))
+
+    return AppContext(
+        config=config, db_path=resolved_db_path, conn=conn, config_path=config_path, job_manager=job_manager
+    )
 
 
 def last_folder_file(config_dir: Path) -> Path:

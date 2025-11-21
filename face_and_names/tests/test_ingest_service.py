@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from PIL import Image, ImageFile
@@ -89,3 +90,46 @@ def test_ingest_rejects_paths_outside_db_root(tmp_path: Path) -> None:
         raise AssertionError("Expected ValueError for out-of-scope folder")
     except ValueError:
         pass
+
+
+def test_ingest_supports_cancellation_and_resume(tmp_path: Path) -> None:
+    db_root = tmp_path / "dbroot"
+    photos = db_root / "photos"
+    imgs = [photos / f"img{i}.jpg" for i in range(3)]
+    for path in imgs:
+        _make_image(path, (10, 10))
+
+    conn = initialize_database(db_root / "faces.db")
+    ingest = IngestService(db_root=db_root, conn=conn)
+
+    cancel_event = threading.Event()
+    last_checkpoint: dict | None = None
+
+    def progress_cb(progress):
+        nonlocal last_checkpoint
+        last_checkpoint = progress.checkpoint
+        if progress.processed >= 1:
+            cancel_event.set()
+
+    progress1 = ingest.start_session(
+        [photos],
+        options=IngestOptions(recursive=True),
+        progress_cb=progress_cb,
+        cancel_event=cancel_event,
+    )
+
+    assert progress1.cancelled is True
+    assert progress1.processed == 1
+    assert progress1.total == 3
+    assert last_checkpoint is not None
+
+    progress2 = ingest.start_session(
+        [photos],
+        options=IngestOptions(recursive=True),
+        checkpoint=last_checkpoint,
+    )
+
+    assert progress2.cancelled is False
+    assert progress2.processed == 2
+    count = conn.execute("SELECT COUNT(*) FROM image").fetchone()[0]
+    assert count == 3

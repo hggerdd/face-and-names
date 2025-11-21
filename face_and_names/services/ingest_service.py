@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
@@ -47,11 +48,15 @@ class IngestProgress:
     processed: int
     skipped_existing: int
     total: int
+    face_count: int
+    no_face_images: int
     errors: list[str]
     current_folder: str | None = None
     last_image_name: str | None = None
     last_thumbnail: bytes | None = None
     last_face_thumbs: list[bytes] | None = None
+    cancelled: bool = False
+    checkpoint: dict[str, object] | None = None
 
 
 class IngestService:
@@ -71,6 +76,8 @@ class IngestService:
         folders: Sequence[str | Path],
         options: IngestOptions | None = None,
         progress_cb: callable | None = None,
+        cancel_event: threading.Event | None = None,
+        checkpoint: dict[str, object] | None = None,
     ) -> IngestProgress:
         opts = options or IngestOptions()
         resolved_folders = [self._resolve_folder(folder) for folder in folders]
@@ -79,35 +86,51 @@ class IngestService:
         session_id = self.sessions.create(folder_count=len(resolved_folders), image_count=0)
         processed = 0
         skipped_existing = 0
+        face_count = 0
+        no_face_images = 0
         errors: List[str] = []
-        paths = list(self._iter_images(resolved_folders, recursive=opts.recursive))
+        paths_all = list(self._iter_images(resolved_folders, recursive=opts.recursive))
+        start_index = int(checkpoint.get("next_index", 0)) if checkpoint else 0
+        paths = paths_all[start_index:]
         total = len(paths)
+        cancelled = False
+        checkpoint_payload: dict[str, object] | None = {"next_index": start_index}
 
         LOGGER.info("Ingest session %s started: %d folders, %d images queued", session_id, len(resolved_folders), total)
 
         detector = self._load_detector()
         self._ensure_face_crop_column()
 
-        for result in self._process_paths(paths):
+        for idx, result in enumerate(self._process_paths(paths, cancel_event=cancel_event), start=start_index):
             image_path = result.path
             is_new = False
             thumb_bytes = None
             face_thumbs = None
+            checkpoint_payload = {"next_index": idx + 1}
             try:
+                if cancel_event and cancel_event.is_set():
+                    cancelled = True
+                    break
                 if result.error:
                     raise result.error
-                is_new, thumb_bytes, face_thumbs = self._ingest_one(
+                is_new, thumb_bytes, face_thumbs, faces_added = self._ingest_one(
                     session_id, image_path, result.raw_bytes, result, detector
                 )
                 if is_new:
                     processed += 1
                     self.sessions.increment_image_count(session_id, delta=1)
+                    if detector is not None:
+                        face_count += faces_added
+                        if faces_added == 0:
+                            no_face_images += 1
                 else:
                     skipped_existing += 1
                     LOGGER.info("Skip duplicate (hash): %s", image_path)
             except Exception as exc:  # pragma: no cover - safety net
                 LOGGER.exception("Failed to ingest %s", image_path)
                 errors.append(f"{image_path}: {exc}")
+            if (processed + skipped_existing) % 10 == 0:
+                self.conn.commit()
             if progress_cb is not None:
                 last_image_name = None
                 last_thumbnail = None
@@ -127,6 +150,10 @@ class IngestService:
                         last_image_name=last_image_name,
                         last_thumbnail=last_thumbnail,
                         last_face_thumbs=last_faces,
+                        face_count=face_count,
+                        no_face_images=no_face_images,
+                        cancelled=cancelled,
+                        checkpoint=checkpoint_payload,
                     )
                 )
 
@@ -144,6 +171,10 @@ class IngestService:
             skipped_existing=skipped_existing,
             total=total,
             errors=errors,
+            face_count=face_count,
+            no_face_images=no_face_images,
+            cancelled=cancelled,
+            checkpoint=checkpoint_payload if total else None,
         )
 
     def _resolve_folder(self, folder: str | Path) -> Path:
@@ -175,7 +206,7 @@ class IngestService:
         raw_bytes: bytes,
         processed: "ProcessedImage",
         detector: DetectorAdapter | None,
-    ) -> tuple[bool, bytes | None, list[bytes] | None]:
+    ) -> tuple[bool, bytes | None, list[bytes] | None, int]:
         # Hashes already computed in worker; reuse
         normalized_bytes = processed.normalized_bytes
         perceptual_hash = processed.perceptual_hash
@@ -192,7 +223,7 @@ class IngestService:
         relative_path = image_path.resolve().relative_to(self.db_root.resolve())
         sub_folder = str(relative_path.parent).replace("\\", "/")
         filename = image_path.name
-        has_faces = 0  # detection not wired yet
+        has_faces = 0
         import_id = session_id
 
         image_id = self.images.add(
@@ -213,11 +244,17 @@ class IngestService:
         self.metadata.add_entries(image_id, metadata_map, meta_type="EXIF")
 
         face_preview: list[bytes] | None = None
+        faces_added = 0
         if detector is not None:
             faces = self._detect_faces(detector, normalized_bytes, width, height)
+            faces_added = len(faces)
+            has_faces = 1 if faces_added else 0
             face_preview = self._persist_faces(faces, image_id, import_id, normalized_bytes, image_path)
 
-        return True, thumb_bytes, face_preview
+        # Update has_faces once detection is known
+        self.conn.execute("UPDATE image SET has_faces = ? WHERE id = ?", (has_faces, image_id))
+
+        return True, thumb_bytes, face_preview, faces_added
 
     def _process_image(self, raw_bytes: bytes) -> tuple[bytes, int, int, int, bytes, dict[str, str]]:
         """Return normalized bytes, phash, dimensions, thumbnail bytes, and metadata."""
@@ -264,11 +301,15 @@ class IngestService:
                 metadata[tag_name] = str(value)
         return metadata
 
-    def _process_paths(self, paths: Sequence[Path]) -> Iterable["ProcessedImage"]:
+    def _process_paths(
+        self, paths: Sequence[Path], cancel_event: threading.Event | None = None
+    ) -> Iterable["ProcessedImage"]:
         """Process images in parallel (IO + CPU) then yield results for DB writes (FR-076/FR-077)."""
         with ThreadPoolExecutor(max_workers=self.processing_workers) as executor:
             for result in executor.map(self._process_single_path, paths):
                 yield result
+                if cancel_event is not None and cancel_event.is_set():
+                    break
 
     def _ensure_face_crop_column(self) -> None:
         """Add face_crop_blob column if missing (migration helper)."""

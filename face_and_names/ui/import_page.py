@@ -5,6 +5,7 @@ Import view for selecting DB Root and triggering ingestion.
 from __future__ import annotations
 
 import threading
+import threading
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -41,11 +42,20 @@ class IngestWorker(QObject):
     finished = pyqtSignal(object)
     progress = pyqtSignal(object)
 
-    def __init__(self, db_root: Path, folders: Sequence[Path], recursive: bool) -> None:
+    def __init__(
+        self,
+        db_root: Path,
+        folders: Sequence[Path],
+        recursive: bool,
+        cancel_event: threading.Event | None = None,
+        checkpoint: dict | None = None,
+    ) -> None:
         super().__init__()
         self.db_root = db_root
         self.folders = folders
         self.recursive = recursive
+        self.cancel_event = cancel_event
+        self.checkpoint = checkpoint
 
     def run(self) -> None:
         conn = initialize_database(self.db_root / "faces.db")
@@ -54,6 +64,8 @@ class IngestWorker(QObject):
             self.folders,
             options=IngestOptions(recursive=self.recursive),
             progress_cb=self.progress.emit,
+            cancel_event=self.cancel_event,
+            checkpoint=self.checkpoint,
         )
         self.finished.emit(progress)
 
@@ -82,8 +94,13 @@ class ImportPage(QWidget):
         self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.face_thumb_labels: list[QLabel] = []
         self.ingest_button = QPushButton("Start Ingest")
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setEnabled(False)
         self.refresh_button = QPushButton("Refresh folder list")
         self.refresh_button.clicked.connect(self._load_subfolders)
+        self.cancel_event: threading.Event | None = None
+        self._last_checkpoint: dict | None = None
+        self._last_selected_folders: list[Path] = []
 
         self._build_ui()
 
@@ -111,7 +128,9 @@ class ImportPage(QWidget):
 
         # Controls
         self.ingest_button.clicked.connect(self._start_ingest)
+        self.cancel_button.clicked.connect(self._cancel_ingest)
         layout.addWidget(self.ingest_button)
+        layout.addWidget(self.cancel_button)
         layout.addWidget(self.folder_label)
         layout.addWidget(self.image_label)
         layout.addWidget(self.thumb_label)
@@ -156,12 +175,23 @@ class ImportPage(QWidget):
         if not folders:
             QMessageBox.warning(self, "No folders", "Select at least one folder to ingest.")
             return
+        use_checkpoint = None
+        if self._last_checkpoint and folders == self._last_selected_folders:
+            use_checkpoint = self._last_checkpoint
         self.ingest_button.setEnabled(False)
+        self.cancel_button.setEnabled(True)
         self.status_label.setText("Ingest running…")
         recursive = self.recursive_checkbox.isChecked()
 
+        self.cancel_event = threading.Event()
         self._thread = QThread(self)
-        self._worker = IngestWorker(db_root=self.db_root, folders=folders, recursive=recursive)
+        self._worker = IngestWorker(
+            db_root=self.db_root,
+            folders=folders,
+            recursive=recursive,
+            cancel_event=self.cancel_event,
+            checkpoint=use_checkpoint,
+        )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._on_progress)
@@ -173,19 +203,30 @@ class ImportPage(QWidget):
 
     def _on_ingest_finished(self, progress) -> None:
         self.ingest_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        self._last_selected_folders = self._checked_folders()
         if progress.errors:
             self.status_label.setText(
                 f"Ingest finished: processed {progress.processed}, skipped {progress.skipped_existing}, "
                 f"errors: {len(progress.errors)}"
             )
         else:
-            self.status_label.setText(
-                f"Ingest finished: processed {progress.processed}, skipped {progress.skipped_existing}"
+            status = (
+                "Ingest cancelled"
+                if getattr(progress, "cancelled", False)
+                else "Ingest finished"
             )
+            self.status_label.setText(
+                f"{status}: processed {progress.processed}, skipped {progress.skipped_existing}"
+            )
+        if getattr(progress, "cancelled", False):
+            self._last_checkpoint = progress.checkpoint
+        else:
+            self._last_checkpoint = None
 
     def _on_progress(self, progress) -> None:
         self.status_label.setText(
-            f"Ingesting… {progress.processed}/{progress.total} processed, skipped {progress.skipped_existing}"
+            f"Ingesting… {progress.processed}/{progress.total} processed, skipped {progress.skipped_existing}, faces {progress.face_count}, no-face {progress.no_face_images}"
         )
         if progress.current_folder:
             self.folder_label.setText(f"Current folder: {progress.current_folder}")
@@ -207,6 +248,8 @@ class ImportPage(QWidget):
             if len(progress.last_face_thumbs) < len(self.face_thumb_labels):
                 for lbl in self.face_thumb_labels[len(progress.last_face_thumbs) :]:
                     lbl.clear()
+        if getattr(progress, "checkpoint", None) is not None:
+            self._last_checkpoint = progress.checkpoint
 
     def _prefill_last_folder(self) -> None:
         """Preselect the last used folder if available and in scope."""
@@ -245,3 +288,8 @@ class ImportPage(QWidget):
     def _on_item_changed(self, item: QListWidgetItem) -> None:
         if item.checkState() == Qt.CheckState.Checked:
             save_last_folder(self.config_dir, Path(item.text()))
+
+    def _cancel_ingest(self) -> None:
+        if self.cancel_event is not None:
+            self.cancel_event.set()
+            self.status_label.setText("Cancellation requested…")

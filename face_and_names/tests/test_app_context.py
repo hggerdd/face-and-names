@@ -31,6 +31,7 @@ def test_initialize_app_honors_env_paths(monkeypatch, tmp_path: Path) -> None:
     assert context.db_path == db_path
     assert context.config_path.parent == config_dir
     assert db_path.exists()
+    assert context.job_manager is not None
     # Ensure schema applied
     tables = {
         row[0]
