@@ -25,6 +25,8 @@ from face_and_names.ui.import_page import ImportPage
 from face_and_names.ui.faces_page import FacesPage
 from face_and_names.ui.clustering_page import ClusteringPage
 from face_and_names.ui.people_groups_page import PeopleGroupsPage
+from face_and_names.ui.prediction_training_page import PredictionTrainingPage
+from face_and_names.ui.prediction_review_page import PredictionReviewPage
 
 
 class MainWindow(QMainWindow):
@@ -71,6 +73,11 @@ class MainWindow(QMainWindow):
             "Clustering",
             placeholder="Configure and run clustering jobs",
             widget=ClusteringPage(self.context),
+        )
+        self._add_page(
+            "Prediction Model Training",
+            placeholder="Prepare and train prediction models (coming soon)",
+            widget=PredictionTrainingPage(),
         )
         self._add_page("Prediction Review", "Review and accept model predictions")
         self._add_page(

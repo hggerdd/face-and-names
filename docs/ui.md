@@ -7,7 +7,7 @@ This document sketches the UI structure, interactions, and accessibility expecta
 - Global status badges for model availability, device selection, and background job indicators (start/stop clustering, start/stop batch prediction, progress bars) per FR-067.
 
 ## Navigation
-- Sections: Faces (workspace), Import, Clustering, People, Prediction Review, Diagnostics, Data Insights, Export/Import, Settings.
+- Sections: Faces (workspace), Import, Clustering, People, Prediction Model Training (placeholder), Prediction Review, Diagnostics, Data Insights, Export/Import, Settings.
 - Faces workspace is primary; other sections provide focused workflows where needed (ingest setup, clustering configuration, export/import, diagnostics).
 
 ## Faces Workspace (FR-014..017, 023..029, 038..042, 064..067)
