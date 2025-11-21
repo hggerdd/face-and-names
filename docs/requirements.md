@@ -8,8 +8,8 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 ## 2. Definitions and Glossary
 - **DB Root**: Folder containing the database file; defines the scope of eligible images (DB root and all subfolders). **[REQ]**
 - **Person ID**: Internal, stable identifier for a person; models operate on IDs (not names). **[REQ]**
-- **People Record**: User-facing attributes for a Person ID (primary name, aliases/short names, optional birthdate, notes). **[REQ]**
-  - Person names consist of first + last name with optional short_name; display uses short_name when present, else first + last.
+- **People Record**: User-facing attributes for a Person ID (first name, last name, optional short_name, primary_name for display, aliases/short names, optional birthdate, notes). **[REQ]**
+  - Display uses short_name when present; otherwise combine first + last name. Person ID remains stable across renames.
 - **Face Tile**: Reusable UI component showing a face crop, current name, predicted name + confidence, delete control, right-click preview. **[REQ]**
 - **Prediction Service**: Shared pipeline for face preprocessing, model invocation, and thresholding. **[REQ]**
 - **Image Identity**: Mechanism to uniquely identify an image independent of filename/location. **[REQ]**

@@ -24,6 +24,7 @@ from face_and_names.app_context import AppContext
 from face_and_names.ui.import_page import ImportPage
 from face_and_names.ui.faces_page import FacesPage
 from face_and_names.ui.clustering_page import ClusteringPage
+from face_and_names.ui.people_groups_page import PeopleGroupsPage
 
 
 class MainWindow(QMainWindow):
@@ -72,7 +73,11 @@ class MainWindow(QMainWindow):
             widget=ClusteringPage(self.context),
         )
         self._add_page("Prediction Review", "Review and accept model predictions")
-        self._add_page("People & Groups", "Manage people records, aliases, groups")
+        self._add_page(
+            "People & Groups",
+            placeholder="Manage people records, aliases, groups",
+            widget=PeopleGroupsPage(self.context.people_service if hasattr(self.context, "people_service") else None),
+        )
         self._add_page("Diagnostics", "Model/DB health, self-test, repair tools")
         self._add_page("Settings", "App preferences, device/worker caps, paths")
 
