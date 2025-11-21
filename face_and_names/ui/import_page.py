@@ -135,6 +135,7 @@ class ImportPage(QWidget):
         layout.addWidget(self.image_label)
         layout.addWidget(self.thumb_label)
         faces_row = QHBoxLayout()
+        faces_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         faces_row.addWidget(QLabel("Faces:"))
         for _ in range(5):
             lbl = QLabel()
