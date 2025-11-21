@@ -62,7 +62,7 @@ class IngestProgress:
 class IngestService:
     """Ingest images into the database, without detection/prediction."""
 
-    def __init__(self, db_root: Path, conn, crop_expand_pct: float = 0.05) -> None:
+    def __init__(self, db_root: Path, conn, crop_expand_pct: float = 0.05, face_target_size: int = 224) -> None:
         self.db_root = db_root
         self.conn = conn
         self.sessions = ImportSessionRepository(conn)
@@ -71,6 +71,7 @@ class IngestService:
         self.faces = FaceRepository(conn)
         self.processing_workers = max(2, min(8, (os.cpu_count() or 4)))
         self.crop_expand_pct = crop_expand_pct
+        self.face_target_size = max(1, int(face_target_size))
 
     def start_session(
         self,
@@ -384,9 +385,7 @@ class IngestService:
                     continue
                 x, y, w, h = self._expand_bbox(det.bbox_abs, img_w, img_h, self.crop_expand_pct)
                 crop = image.crop((x, y, x + w, y + h))
-                buf = BytesIO()
-                crop.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
-                crop_bytes = buf.getvalue()
+                crop_bytes = self._normalize_crop(crop, target_size=self.face_target_size)
                 self.faces.add(
                     image_id=image_id,
                     bbox_abs=det.bbox_abs,
@@ -402,6 +401,22 @@ class IngestService:
                 if idx < 5:
                     preview.append(crop_bytes)
         return preview, stored
+
+    def _normalize_crop(self, crop: Image.Image, target_size: int) -> bytes:
+        """Resize crop to target square with padding to preserve aspect ratio."""
+        ts = max(1, int(target_size))
+        bg = Image.new("RGB", (ts, ts), color="white")
+        w, h = crop.size
+        scale = min(ts / w, ts / h)
+        new_w = max(1, int(w * scale))
+        new_h = max(1, int(h * scale))
+        resized = crop.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        x_off = (ts - new_w) // 2
+        y_off = (ts - new_h) // 2
+        bg.paste(resized, (x_off, y_off))
+        buf = BytesIO()
+        bg.save(buf, format="JPEG", quality=85, optimize=True)
+        return buf.getvalue()
 
     def _process_single_path(self, path: Path) -> "ProcessedImage":
         try:

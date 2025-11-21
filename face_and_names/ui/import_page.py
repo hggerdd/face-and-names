@@ -5,7 +5,6 @@ Import view for selecting DB Root and triggering ingestion.
 from __future__ import annotations
 
 import threading
-import threading
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -50,6 +49,7 @@ class IngestWorker(QObject):
         cancel_event: threading.Event | None = None,
         checkpoint: dict | None = None,
         crop_expand_pct: float = 0.05,
+        face_target_size: int = 224,
     ) -> None:
         super().__init__()
         self.db_root = db_root
@@ -58,10 +58,16 @@ class IngestWorker(QObject):
         self.cancel_event = cancel_event
         self.checkpoint = checkpoint
         self.crop_expand_pct = crop_expand_pct
+        self.face_target_size = face_target_size
 
     def run(self) -> None:
         conn = initialize_database(self.db_root / "faces.db")
-        service = IngestService(db_root=self.db_root, conn=conn, crop_expand_pct=self.crop_expand_pct)
+        service = IngestService(
+            db_root=self.db_root,
+            conn=conn,
+            crop_expand_pct=self.crop_expand_pct,
+            face_target_size=self.face_target_size,
+        )
         progress = service.start_session(
             self.folders,
             options=IngestOptions(recursive=self.recursive),
@@ -190,6 +196,7 @@ class ImportPage(QWidget):
         self.cancel_event = threading.Event()
         detector_cfg = self.context.config.get("detector", {}) if isinstance(self.context.config, dict) else {}
         crop_expand_pct = float(detector_cfg.get("crop_expand_pct", 0.05))
+        face_target_size = int(detector_cfg.get("face_target_size", 224))
         self._thread = QThread(self)
         self._worker = IngestWorker(
             db_root=self.db_root,
@@ -198,6 +205,7 @@ class ImportPage(QWidget):
             cancel_event=self.cancel_event,
             checkpoint=use_checkpoint,
             crop_expand_pct=crop_expand_pct,
+            face_target_size=face_target_size,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

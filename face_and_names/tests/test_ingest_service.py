@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageFile
@@ -191,3 +192,31 @@ def test_face_crop_expands_by_configured_pct(monkeypatch, tmp_path: Path) -> Non
 
     with Image.open(BytesIO(row[0])) as crop:
         assert crop.size == (24, 24)  # 20px expanded by 10% each side -> 24px
+
+
+def test_face_crops_are_normalized(monkeypatch, tmp_path: Path) -> None:
+    class DummyDetector:
+        def detect_batch(self, images):
+            class Det:
+                bbox_abs = (0.0, 0.0, 20.0, 10.0)
+                bbox_rel = (0.0, 0.0, 0.2, 0.1)
+                confidence = 0.9
+
+            return [[Det()]]
+
+    db_root = tmp_path / "dbroot"
+    photos = db_root / "photos"
+    img1 = photos / "a.jpg"
+    _make_image(img1, (40, 20))
+
+    conn = initialize_database(db_root / "faces.db")
+    ingest = IngestService(db_root=db_root, conn=conn, face_target_size=64)
+    monkeypatch.setattr(ingest, "_load_detector", lambda: DummyDetector())
+
+    progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
+
+    assert progress.face_count == 1
+    row = conn.execute("SELECT face_crop_blob FROM face").fetchone()
+    assert row is not None
+    with Image.open(BytesIO(row[0])) as crop:
+        assert crop.size == (64, 64)

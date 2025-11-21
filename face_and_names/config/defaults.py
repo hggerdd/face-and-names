@@ -16,6 +16,7 @@ DEFAULTS: dict[str, object] = {
     "detector": {
         "default": "yolo",
         "crop_expand_pct": 0.05,
+        "face_target_size": 224,
         "yolo": {"weights_path": "yolov11n-face.pt"},
     },
 }
