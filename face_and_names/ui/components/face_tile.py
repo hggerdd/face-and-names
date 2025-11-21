@@ -97,9 +97,10 @@ class FaceTile(QWidget):
         self.image_container = QFrame()
         self.image_container.setFrameShape(QFrame.Shape.StyledPanel)
         self.image_container.setStyleSheet("QFrame { background: #111; }")
+        self.image_container.setFixedHeight(240)
         img_layout = QVBoxLayout()
         img_layout.setContentsMargins(4, 4, 4, 4)
-        img_layout.setSpacing(0)
+        img_layout.setSpacing(4)
 
         top_row = QHBoxLayout()
         top_row.addStretch(1)
@@ -112,7 +113,7 @@ class FaceTile(QWidget):
         img_layout.addLayout(top_row)
 
         self.image_label = QLabel(alignment=Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setMinimumSize(120, 120)
+        self.image_label.setMinimumSize(140, 140)
         self.image_label.setScaledContents(False)
         img_layout.addWidget(self.image_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -129,6 +130,7 @@ class FaceTile(QWidget):
 
         root = QVBoxLayout()
         root.setContentsMargins(4, 4, 4, 4)
+        root.setSpacing(4)
         root.addWidget(self.image_container)
         root.addWidget(self.assigned_label)
         self.setLayout(root)
@@ -182,14 +184,14 @@ class FaceTile(QWidget):
             return
         if self.selected:
             scaled = self._orig_pixmap.scaled(
-                140, 140, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                160, 160, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
             )
             self.image_label.setPixmap(scaled)
             self.image_label.setGraphicsEffect(None)
         else:
             img: QImage = self._orig_pixmap.toImage().convertToFormat(QImage.Format.Format_Grayscale8)
             pix = QPixmap.fromImage(img).scaled(
-                140, 140, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                160, 160, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
             )
             self.image_label.setPixmap(pix)
 
