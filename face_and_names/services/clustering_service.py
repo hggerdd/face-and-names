@@ -10,7 +10,7 @@ from typing import Iterable, List, Sequence
 
 import imagehash
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 from sklearn.cluster import DBSCAN
 
 
