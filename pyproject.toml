@@ -32,7 +32,12 @@ dev = [
 ]
 
 [tool.uv]
-# Pin a constraint file or index as needed; update once dependencies are finalized.
+default-index = "pypi"
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
