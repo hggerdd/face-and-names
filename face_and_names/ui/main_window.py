@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
         self._add_page(
             "Prediction Model Training",
             placeholder="Prepare and train prediction models (coming soon)",
-            widget=PredictionTrainingPage(),
+            widget=PredictionTrainingPage(self.context),
         )
         self._add_page("Prediction Review", "Review and accept model predictions")
         self._add_page(

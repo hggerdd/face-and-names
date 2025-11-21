@@ -64,6 +64,8 @@ def train_model_from_db(
     config: TrainingConfig | None = None,
     embedder: EmbeddingModel | None = None,
     classifier_factory: Callable[[], object] | None = None,
+    progress: Callable[[str, int, int], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict:
     """
     Train a classifier from verified faces and persist artifacts.
@@ -75,6 +77,8 @@ def train_model_from_db(
 
     conn = connect(db_path)
     samples = load_verified_faces(conn)
+    if progress:
+        progress("loaded", len(samples), len(samples))
     if not samples:
         raise RuntimeError("No verified faces available for training")
 
@@ -94,11 +98,19 @@ def train_model_from_db(
 
     train_idx, val_idx = _select_train_val(labels, cfg)
 
+    if should_stop and should_stop():
+        raise RuntimeError("Training cancelled before embedding")
+    if progress:
+        progress("embedding", 0, len(images))
     embeddings = embedder.embed_images(images)
+    if progress:
+        progress("embedding", len(images), len(images))
     scaler = StandardScaler()
     X_train = scaler.fit_transform(np.array([embeddings[i] for i in train_idx]))
     y_train = np.array([labels[i] for i in train_idx])
 
+    if should_stop and should_stop():
+        raise RuntimeError("Training cancelled before classifier fit")
     clf = classifier_factory()
     clf.fit(X_train, y_train)
 
