@@ -144,7 +144,6 @@ class ClusteringPage(QWidget):
         self.faces_area.setWidget(self.faces_inner)
         self.names_list = QListWidget()
         self.names_list.setFixedWidth(180)
-        self.names_list.itemDoubleClicked.connect(self._on_name_double_clicked)
         self.state = ClusterState(clusters=[])
         self.current_tiles: list[FaceTile] = []
 
@@ -397,10 +396,14 @@ class ClusteringPage(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted or dlg.selected_person_id is None:
             return
         pid = dlg.selected_person_id
-        for tile in tiles:
-            self.face_repo.update_person(tile.data.face_id, pid)
-        self.context.conn.commit()
-        self._show_cluster()
+        try:
+            for tile in tiles:
+                self.face_repo.update_person(tile.data.face_id, pid)
+            self.context.conn.commit()
+            self._show_cluster()
+        except Exception as exc:  # pragma: no cover - UI guardrail
+            QMessageBox.critical(self, "Assign failed", str(exc))
+
 
     def _refresh_people_list(self) -> None:
         people = sorted(self.people_service.list_people(), key=lambda p: p.get("display_name") or p.get("primary_name") or "")
@@ -412,14 +415,17 @@ class ClusteringPage(QWidget):
             self.names_list.addItem(item)
 
     def _on_name_double_clicked(self, item: QListWidgetItem) -> None:
-        pid = item.data(Qt.ItemDataRole.UserRole)
-        if pid is None:
-            return
-        tiles = self._selected_tiles()
-        if not tiles:
-            QMessageBox.information(self, "No selection", "Select one or more faces to set a name.")
-            return
-        for tile in tiles:
-            self.face_repo.update_person(tile.data.face_id, int(pid))
-        self.context.conn.commit()
-        self._show_cluster()
+        try:
+            pid = item.data(Qt.ItemDataRole.UserRole)
+            if pid is None:
+                return
+            tiles = self._selected_tiles()
+            if not tiles:
+                QMessageBox.information(self, "No selection", "Select one or more faces to set a name.")
+                return
+            for tile in tiles:
+                self.face_repo.update_person(tile.data.face_id, int(pid))
+            self.context.conn.commit()
+            self._show_cluster()
+        except Exception as exc:  # pragma: no cover - safety
+            QMessageBox.critical(self, "Assign failed", str(exc))
