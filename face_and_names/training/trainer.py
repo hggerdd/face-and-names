@@ -13,10 +13,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Tuple
 
 import numpy as np
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -35,6 +35,7 @@ class TrainingConfig:
     test_size: float = 0.2
     random_state: int = 42
     min_class_size: int = 2
+    metrics_min_samples: int = 50
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
 
 
@@ -42,20 +43,34 @@ def _default_classifier_factory() -> SVC:
     return SVC(kernel="linear", probability=True, class_weight="balanced", random_state=42)
 
 
-def _select_train_val(labels: list[int], cfg: TrainingConfig) -> tuple[list[int], list[int]]:
-    unique = set(labels)
-    if len(unique) < 2 or len(labels) < 3:
-        return list(range(len(labels))), []
-    # Ensure the validation split can contain at least one sample per class
-    min_test = int(round(len(labels) * cfg.test_size))
-    if min_test < len(unique):
-        return list(range(len(labels))), []
-    return train_test_split(
-        list(range(len(labels))),
-        test_size=cfg.test_size,
-        random_state=cfg.random_state,
-        stratify=labels,
-    )
+def _split_per_person(
+    labels: list[int], cfg: TrainingConfig
+) -> Tuple[list[int], list[int], set[int]]:
+    """
+    Split indices into train/test per person.
+    - Persons with > metrics_min_samples get 80/20 split (or cfg.test_size).
+    - Persons with <= threshold go entirely to train.
+    Returns (train_indices, test_indices, eligible_ids_for_metrics)
+    """
+    train_idx: list[int] = []
+    test_idx: list[int] = []
+    eligible: set[int] = set()
+    rng = np.random.default_rng(cfg.random_state)
+    # group indices by person
+    by_person: dict[int, list[int]] = {}
+    for idx, pid in enumerate(labels):
+        by_person.setdefault(pid, []).append(idx)
+    for pid, idxs in by_person.items():
+        if len(idxs) > cfg.metrics_min_samples:
+            eligible.add(pid)
+            idxs_copy = idxs[:]
+            rng.shuffle(idxs_copy)
+            split_at = max(1, int(len(idxs_copy) * (1 - cfg.test_size)))
+            train_idx.extend(idxs_copy[:split_at])
+            test_idx.extend(idxs_copy[split_at:])
+        else:
+            train_idx.extend(idxs)
+    return train_idx, test_idx, eligible
 
 
 def train_model_from_db(
@@ -69,6 +84,9 @@ def train_model_from_db(
 ) -> dict:
     """
     Train a classifier from verified faces and persist artifacts.
+    Evaluation (confusion matrix) is computed only for persons with > metrics_min_samples images.
+    For those, an 80/20 per-person split (or cfg.test_size) is used: 80% train, 20% test for metrics.
+    Persons with <= threshold go entirely to the training set and do not appear in metrics.
     Returns metrics dict.
     """
     cfg = config or TrainingConfig()
@@ -94,7 +112,7 @@ def train_model_from_db(
             raise RuntimeError("All classes were dropped due to insufficient samples")
 
     labels = [s.person_id for s in samples]
-    train_idx, val_idx = _select_train_val(labels, cfg)
+    train_idx, val_idx, eligible_ids = _split_per_person(labels, cfg)
 
     if should_stop and should_stop():
         raise RuntimeError("Training cancelled before embedding")
@@ -122,10 +140,24 @@ def train_model_from_db(
     clf.fit(X_train, y_train)
 
     acc = None
+    cm = None
+    cm_norm = None
+    cm_labels: list[int] = []
+    y_true = []
+    y_pred = []
     if val_idx:
         X_val = scaler.transform(np.array([embeddings[i] for i in val_idx]))
         y_val = np.array([labels[i] for i in val_idx])
-        acc = float(accuracy_score(y_val, clf.predict(X_val)))
+        preds = clf.predict(X_val)
+        acc = float(accuracy_score(y_val, preds))
+        y_true = y_val.tolist()
+        y_pred = preds.tolist()
+        # Only include eligible IDs
+        cm_labels = sorted(list(eligible_ids))
+        if cm_labels:
+            cm = confusion_matrix(y_true, y_pred, labels=cm_labels)
+            with np.errstate(all="ignore"):
+                cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
 
     metrics = {
         "samples": len(samples),
@@ -134,6 +166,12 @@ def train_model_from_db(
         "train_size": len(train_idx),
         "val_size": len(val_idx),
         "val_accuracy": acc,
+        "eligible_for_metrics": sorted(list(eligible_ids)),
+        "confusion_matrix": cm.tolist() if cm is not None else None,
+        "confusion_matrix_normalized": cm_norm.tolist() if cm_norm is not None else None,
+        "confusion_labels": cm_labels,
+        "y_true": y_true,
+        "y_pred": y_pred,
     }
 
     # Persist artifacts

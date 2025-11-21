@@ -25,6 +25,15 @@ def main(argv: list[str] | None = None) -> int:
     cfg = TrainingConfig(model_dir=args.model_dir)
     metrics = train_model_from_db(context.db_path, config=cfg)
     print(json.dumps(metrics, indent=2))
+    # Pretty print confusion matrix if available
+    if metrics.get("confusion_matrix"):
+        labels = metrics.get("confusion_labels", [])
+        print("\nConfusion matrix (rows=true, cols=pred, labels=person_id):")
+        cm = metrics["confusion_matrix"]
+        header = "     " + " ".join(f"{lbl:>6}" for lbl in labels)
+        print(header)
+        for lbl, row in zip(labels, cm):
+            print(f"{lbl:>4} " + " ".join(f"{int(v):>6}" for v in row))
     return 0
 
 
