@@ -130,6 +130,16 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-066** The Faces workspace shall include a contextual side panel that changes with mode: Cluster mode shows cluster navigation/histogram and bulk assign/clear; Prediction mode shows confidence histogram and bulk accept/rename; Person mode shows person metadata/timeline and bulk rename/merge; All mode shows summary stats. **[DER]**
 - **FR-067** The Faces workspace shall expose global actions in a footer/header for start/stop clustering, start/stop batch prediction, progress indicators, and status of model availability/device selection, without requiring navigation to another tab. **[DER]**
 
+### 4.17 Reusable Face UI Element
+- **FR-080** Provide a reusable UI element that represents exactly one face and fits into grids, tables, or lists. **[DER]**
+- **FR-081** Display the assigned person (first + last name resolved via person_id) below the image and overlay the predicted name inside the image at the bottom when available. **[DER]**
+- **FR-082** Render a trash icon in the top-right corner; clicking opens a confirmation UI and, on confirmation, deletes the face and references from the DB with error handling. **[DER]**
+- **FR-083** Single left-click toggles selection state; selected faces render normally, deselected faces render bright grayscale; selection state is externally retrievable. **[DER]**
+- **FR-084** Double-clicking the predicted name assigns predicted_person_id as the actual person_id (overwriting any prior assignment) while leaving the predicted name unchanged; persist the change. **[DER]**
+- **FR-085** Double-clicking the assigned name opens a person-management menu/dialog supporting: choosing an existing person to assign; adding a new person; renaming an existing person (global rename by ID). Persist all changes. **[DER]**
+- **FR-086** Right-click opens the original full image containing the face with the face’s bounding box highlighted, reusing existing image/bbox retrieval where available. **[DER]**
+- **FR-087** Expose callbacks/events for selection change, delete, person assignment/rename/add, and open-original so parent views can react without tight coupling; align with existing styling/architecture and logging expectations. **[DER]**
+
 ## 5. Non-Functional Requirements (NFR)
 - **NFR-001 Performance**: Time from launch to main UI ready (or splash dismissal) shall be ≤ 2 seconds on target modest hardware, measured with a representative DB and no blocking tasks. **[REQ]**
 - **NFR-002 Performance**: Tab change shall not trigger heavy processing; feature-specific heavy work shall start only when the feature is invoked. **[REQ]**
