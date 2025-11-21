@@ -4,8 +4,8 @@ Checklist to convert wireframes into actionable PyQt scaffolding.
 
 - Choose Qt version (PyQt6 preferred); verify module needs (widgets, charts vs. custom histograms, no webengine unless required).
 - Define main window class structure: header, nav, content stack, footer components.
-- Define shared face tile widget: states (selected/inactive), labels, hover actions, right-click preview hook.
-- Plan virtualization approach for grids: Qt item views vs. custom widget pool; target performance on large datasets.
+- Define shared face tile widget: states (selected/inactive), labels, hover actions, right-click preview hook. Skeleton added in `ui/components/face_tile.py`; wire into Faces/Naming/Prediction flows.
+- Plan virtualization approach for grids: Qt item views vs. custom widget pool; target performance on large datasets. Interim paging (`Load more`, default page size 200) is in place for folder thumbnails.
 - Map keyboard shortcuts and focus order for primary actions (accept/rename/delete/select all/navigate clusters).
 - Decide charting approach for histograms (confidence, cluster sizes): lightweight custom paint vs. library.
 - Design data models for filters (scope, confidence, unnamed-only, differs-from-name, date range, groups) with PyQt bindings.

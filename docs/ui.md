@@ -13,7 +13,7 @@ This document sketches the UI structure, interactions, and accessibility expecta
 ## Faces Workspace (FR-014..017, 023..029, 038..042, 064..067)
 - Modes: Cluster, Prediction, Person, All (toggle in header).
 - Shared filters: scope (DB Root/folders/latest import), confidence range, unnamed-only, differs-from-name, date range, groups/tags, name/alias substring (prediction review).
-- Main area: virtualized grid of face tiles showing current name, predicted name+confidence, cluster badge; supports select-all/deselect-all and wrap-around navigation.
+- Main area: virtualized grid of face tiles showing current name, predicted name+confidence, cluster badge; supports select-all/deselect-all and wrap-around navigation. Interim implementation uses paged loading (�?�Load more�?�) for folder thumbnails until full virtualization lands.
 - Contextual side panel (right):
   - Cluster mode: cluster navigation, cluster size histogram, bulk assign/clear, delete selected.
   - Prediction mode: confidence histogram, name frequency, bulk accept/rename/delete.
@@ -21,7 +21,7 @@ This document sketches the UI structure, interactions, and accessibility expecta
   - All mode: summary stats (counts, duplicates, images without faces).
 - Face tile interactions: single-click toggles selection (inactive styling); double-click accepts prediction or opens rename per mode; right-click opens preview (full image with bbox and labels); delete control removes face (FR-016/029).
 - Image view overlay: shows stored bboxes; users can draw/edit bboxes and assign person ID (FR-015).
-- Virtualization/pagination to maintain performance on large sets (NFR-015).
+- Virtualization/pagination to maintain performance on large sets (NFR-015). Shared `FaceTile` component lives under `face_and_names/ui/components/face_tile.py` for reuse across Faces/Naming/Prediction Review.
 
 ## Import (FR-001..009)
 - Folder tree rooted at DB Root with recursive option and per-subfolder checkboxes; remembers last selection (FR-004/005).

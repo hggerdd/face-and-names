@@ -1,5 +1,5 @@
 """
-Faces view: shows folders/images from DB and overlays detected faces.
+Faces view: shows folders/images from DB with paging and overlays for detected faces.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QSplitter,
     QTreeWidget,
     QTreeWidgetItem,
@@ -66,7 +67,10 @@ class FaceImageView(QGraphicsView):
 
 
 class FacesPage(QWidget):
-    """Faces tab with folder tree, image list, and preview with face overlays."""
+    """
+    Faces tab with folder tree, image list (paged), and preview with face overlays.
+    Paging keeps the UI responsive for large folders until full virtualization is wired.
+    """
 
     def __init__(self, context: AppContext) -> None:
         super().__init__()
@@ -74,8 +78,16 @@ class FacesPage(QWidget):
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.image_list = QListWidget()
+        self.image_list.setUniformItemSizes(True)
         self.preview = FaceImageView()
         self.status = QLabel("Select a folder")
+        self.load_more_btn = QPushButton("Load more")
+        self.load_more_btn.clicked.connect(self._load_more)
+        self.load_more_btn.setEnabled(False)
+        self.page_size = 200
+        self.current_folder: str = ""
+        self.current_offset = 0
+        self.total_images = 0
 
         splitter = QSplitter()
         left = QWidget()
@@ -84,6 +96,7 @@ class FacesPage(QWidget):
         left_layout.addWidget(self.tree)
         left_layout.addWidget(QLabel("Images"))
         left_layout.addWidget(self.image_list)
+        left_layout.addWidget(self.load_more_btn)
         left.setLayout(left_layout)
         splitter.addWidget(left)
         splitter.addWidget(self.preview)
@@ -131,24 +144,40 @@ class FacesPage(QWidget):
         if not items:
             return
         folder = items[0].data(0, Qt.ItemDataRole.UserRole)
-        folder = folder or ""
-        imgs = self._load_images(folder)
+        self.current_folder = folder or ""
+        self.current_offset = 0
         self.image_list.clear()
+        self._load_page(reset=True)
+
+    def _load_page(self, reset: bool = False) -> None:
+        imgs, total = self._load_images(self.current_folder, offset=self.current_offset, limit=self.page_size)
+        if reset:
+            self.image_list.clear()
         for rec in imgs:
             item = QListWidgetItem(rec.filename)
             item.setData(Qt.ItemDataRole.UserRole, rec)
             self.image_list.addItem(item)
-        self.status.setText(f"{len(imgs)} images in /{folder}")
+        self.current_offset += len(imgs)
+        self.total_images = total
+        self.load_more_btn.setEnabled(self.current_offset < self.total_images)
+        self.status.setText(f"{self.current_offset}/{self.total_images} images in /{self.current_folder or '/'}")
 
-    def _load_images(self, folder: str) -> List[ImageRecord]:
+    def _load_more(self) -> None:
+        self._load_page(reset=False)
+
+    def _load_images(self, folder: str, offset: int, limit: int) -> tuple[List[ImageRecord], int]:
+        total = self.context.conn.execute(
+            "SELECT COUNT(*) FROM image WHERE sub_folder = ?", (folder,),
+        ).fetchone()[0]
         rows = self.context.conn.execute(
             """
             SELECT id, filename, relative_path, thumbnail_blob, width, height
             FROM image
             WHERE sub_folder = ?
             ORDER BY filename
+            LIMIT ? OFFSET ?
             """,
-            (folder,),
+            (folder, limit, offset),
         ).fetchall()
         return [
             ImageRecord(
@@ -160,7 +189,7 @@ class FacesPage(QWidget):
                 height=row[5],
             )
             for row in rows
-        ]
+        ], total
 
     def _on_image_selected(self) -> None:
         items = self.image_list.selectedItems()
