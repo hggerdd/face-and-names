@@ -121,6 +121,12 @@ class MainWindow(QMainWindow):
         index = self.nav.row(current_items[0])
         if name in self._pages:
             self.stacked.setCurrentIndex(index)
+            page = self._pages[name]
+            if hasattr(page, "refresh_data"):
+                try:
+                    page.refresh_data()
+                except Exception:
+                    pass
 
     def _replace_context(self, new_context: AppContext) -> None:
         """Replace shared context when DB Root changes."""

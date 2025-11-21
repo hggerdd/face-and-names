@@ -138,7 +138,7 @@ class FacesPage(QWidget):
         self.tree.itemSelectionChanged.connect(self._on_folder_selected)
         self.image_list.itemSelectionChanged.connect(self._on_image_selected)
 
-        self._load_folders()
+        self.refresh_data()
         # Refresh when ingest or clustering completes
         try:
             self.context.events.subscribe("ingest_completed", self._on_external_refresh)
@@ -146,12 +146,19 @@ class FacesPage(QWidget):
         except Exception:
             pass
 
-    def _on_external_refresh(self, *args, **kwargs) -> None:
-        """Refresh folders/images when data changes elsewhere."""
-        self._load_folders()
+    def refresh_data(self) -> None:
+        """Reload folders/images (supports DB resets and tab activation)."""
         self.image_list.clear()
         self.face_table.setRowCount(0)
         self.preview.scene().clear()
+        self.current_folder = ""
+        self.current_offset = 0
+        self.total_images = 0
+        self._load_folders()
+
+    def _on_external_refresh(self, *args, **kwargs) -> None:
+        """Refresh folders/images when data changes elsewhere."""
+        self.refresh_data()
         self.status.setText("Refreshed after external update")
 
     def _load_folders(self) -> None:
