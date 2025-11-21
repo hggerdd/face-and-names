@@ -94,17 +94,24 @@ def train_model_from_db(
             raise RuntimeError("All classes were dropped due to insufficient samples")
 
     labels = [s.person_id for s in samples]
-    images = [s.image for s in samples]
-
     train_idx, val_idx = _select_train_val(labels, cfg)
 
     if should_stop and should_stop():
         raise RuntimeError("Training cancelled before embedding")
-    if progress:
-        progress("embedding", 0, len(images))
-    embeddings = embedder.embed_images(images)
-    if progress:
-        progress("embedding", len(images), len(images))
+    embeddings = []
+    total = len(samples)
+    for idx, sample in enumerate(samples, start=1):
+        if should_stop and should_stop():
+            raise RuntimeError("Training cancelled during embedding")
+        vec = embedder.embed_images([sample.image])
+        if vec.size == 0:
+            continue
+        embeddings.append(vec[0])
+        if progress:
+            progress(f"embedding {sample.source}", idx, total)
+    if not embeddings:
+        raise RuntimeError("No embeddings produced")
+    embeddings = np.stack(embeddings, axis=0)
     scaler = StandardScaler()
     X_train = scaler.fit_transform(np.array([embeddings[i] for i in train_idx]))
     y_train = np.array([labels[i] for i in train_idx])

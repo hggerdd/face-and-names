@@ -24,6 +24,7 @@ class FaceSample:
     face_id: int
     person_id: int
     image: Image.Image
+    source: str  # relative path/filename for progress display
 
 
 def _has_verified_column(conn: sqlite3.Connection) -> bool:
@@ -44,7 +45,13 @@ def load_verified_faces(conn: sqlite3.Connection, limit: int | None = None) -> L
     if _has_verified_column(conn):
         conditions.append("verified = 1")
     where = " AND ".join(conditions)
-    sql = f"SELECT id, face_crop_blob, person_id FROM face WHERE {where} ORDER BY person_id, id"
+    sql = f"""
+        SELECT f.id, f.face_crop_blob, f.person_id, i.relative_path, i.filename
+        FROM face f
+        JOIN image i ON i.id = f.image_id
+        WHERE {where}
+        ORDER BY f.person_id, f.id
+    """
     params: Iterable[int] = ()
     if limit is not None:
         sql += " LIMIT ?"
@@ -52,7 +59,7 @@ def load_verified_faces(conn: sqlite3.Connection, limit: int | None = None) -> L
 
     rows = conn.execute(sql, params).fetchall()
     samples: list[FaceSample] = []
-    for face_id, blob, person_id in rows:
+    for face_id, blob, person_id, rel_path, filename in rows:
         if blob is None:
             continue
         try:
@@ -60,5 +67,6 @@ def load_verified_faces(conn: sqlite3.Connection, limit: int | None = None) -> L
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Skipping face %s: failed to decode blob (%s)", face_id, exc)
             continue
-        samples.append(FaceSample(face_id=int(face_id), person_id=int(person_id), image=img))
+        source = str(rel_path or filename or f"face_{face_id}")
+        samples.append(FaceSample(face_id=int(face_id), person_id=int(person_id), image=img, source=source))
     return samples
