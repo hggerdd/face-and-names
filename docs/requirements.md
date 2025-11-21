@@ -141,6 +141,13 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-086** Right-click opens the original full image containing the face with the face’s bounding box highlighted, reusing existing image/bbox retrieval where available. **[DER]**
 - **FR-087** Expose callbacks/events for selection change, delete, person assignment/rename/add, and open-original so parent views can react without tight coupling; align with existing styling/architecture and logging expectations. **[DER]**
 
+### 4.18 Training & Model Artifacts
+- **FR-088** Provide a headless training pipeline that loads only verified faces (person_id present; if a `verified` column exists, it must be true) from SQLite, decodes `face_crop_blob` BLOBs to RGB, and maps samples to stable person IDs. **[DER]**
+- **FR-089** The training pipeline shall reuse the same embedding backbone as inference (Facenet/InceptionResnetV1, pretrained vggface2) and split data with per-class awareness (train/validation). **[DER]**
+- **FR-090** The classifier shall be trained on embeddings with class-aware balancing and shall report at least overall validation accuracy; classes with insufficient samples shall be logged and skipped. **[DER]**
+- **FR-091** Model artifacts shall be stored under top-level `model/` containing classifier (`classifier.pkl`), scaler/normalizer, `person_id_mapping.json`, `embedding_config.json`, and `metrics.json`; a `version.txt` shall record timestamp/uuid/app version. **[DER]**
+- **FR-092** Prediction/inference shall load the model artifacts from `model/`, reconstruct the embedder with saved config, and return person ID + confidence; missing/incompatible artifacts shall surface clear errors without crashing the app. **[DER]**
+
 ## 5. Non-Functional Requirements (NFR)
 - **NFR-001 Performance**: Time from launch to main UI ready (or splash dismissal) shall be ≤ 2 seconds on target modest hardware, measured with a representative DB and no blocking tasks. **[REQ]**
 - **NFR-002 Performance**: Tab change shall not trigger heavy processing; feature-specific heavy work shall start only when the feature is invoked. **[REQ]**

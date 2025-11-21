@@ -28,6 +28,7 @@ face_recognition_models copy/
 
 # Model files
 models/
+model/
 *.joblib
 *.pth
 
