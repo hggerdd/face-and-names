@@ -105,6 +105,9 @@ class PredictionReviewPage(QWidget):
         self.unnamed_only.stateChanged.connect(lambda _: self._load_faces())
         self.refresh_btn.clicked.connect(self.refresh_data)
 
+    def _on_person_selected(self) -> None:
+        self._load_faces()
+
     def refresh_data(self) -> None:
         """Reload people list and faces."""
         self._load_people()
