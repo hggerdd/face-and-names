@@ -145,6 +145,7 @@ class ImportPage(QWidget):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.face_thumb_labels.append(lbl)
             faces_row.addWidget(lbl)
+        faces_row.addStretch(1)
         layout.addLayout(faces_row)
         layout.addWidget(self.status_label)
 
