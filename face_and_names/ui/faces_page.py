@@ -321,11 +321,8 @@ class FacesPage(QWidget):
         self.face_repo.update_person(face_id, person_id)
         self.context.conn.commit()
 
-    def _create_person(self, name: str) -> int:
-        parts = name.split(" ", 1)
-        first = parts[0].strip() if parts else ""
-        last = parts[1].strip() if len(parts) > 1 else ""
-        return self.people_service.create_person(first, last, short_name=None)
+    def _create_person(self, first: str, last: str, short_name: str | None = None) -> int:
+        return self.people_service.create_person(first, last, short_name=short_name)
 
     def _on_face_deleted(self, face_id: int) -> None:
         # Refresh current image view if visible
