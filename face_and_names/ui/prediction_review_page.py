@@ -116,13 +116,28 @@ class PredictionReviewPage(QWidget):
     def _load_people(self) -> None:
         self.people_list.clear()
         people = sorted(self.people_service.list_people(), key=lambda p: p.get("display_name") or p.get("primary_name"))
+        counts = self._predicted_counts()
         for person in people:
             name = person.get("display_name") or person.get("primary_name") or "(unnamed)"
-            item = QListWidgetItem(name)
+            count = counts.get(person.get("id"), 0)
+            label = f"{name} ({count})"
+            item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, person.get("id"))
             self.people_list.addItem(item)
         if self.people_list.count() and not self.people_list.selectedItems():
             self.people_list.setCurrentRow(0)
+
+    def _predicted_counts(self) -> dict[int, int]:
+        rows = self.context.conn.execute(
+            """
+            SELECT predicted_person_id, COUNT(*)
+            FROM face
+            WHERE predicted_person_id IS NOT NULL
+              AND person_id IS NULL
+            GROUP BY predicted_person_id
+            """
+        ).fetchall()
+        return {int(r[0]): int(r[1]) for r in rows}
 
     def _selected_person_id(self) -> int | None:
         items = self.people_list.selectedItems()
