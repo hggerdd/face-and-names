@@ -153,7 +153,11 @@ class ClusteringPage(QWidget):
         self.current_tiles: list[FaceTile] = []
 
         self._build_ui()
-        self._load_folders()
+        self.refresh_data()
+        try:
+            self.context.events.subscribe("ingest_completed", lambda *args, **kwargs: self.refresh_data())
+        except Exception:
+            pass
 
     def _build_ui(self) -> None:
         controls = QHBoxLayout()
@@ -211,6 +215,14 @@ class ClusteringPage(QWidget):
         for (folder,) in rows:
             item = QListWidgetItem(folder)
             self.folder_list.addItem(item)
+
+    def refresh_data(self) -> None:
+        """Reload folders and clear current cluster state."""
+        self._load_folders()
+        self.state = ClusterState(clusters=[])
+        self.cluster_label.setText("No clusters loaded")
+        self._clear_faces()
+        self.status_label.setText("Select folders and run clustering.")
 
     def _selected_folders(self) -> list[str]:
         return [i.text() for i in self.folder_list.selectedItems()]
