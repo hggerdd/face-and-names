@@ -324,6 +324,8 @@ class ClusteringPage(QWidget):
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
             )
+            tile.deleteCompleted.connect(lambda fid, self=self: self._on_tile_deleted(fid))
+            tile.dataChanged.connect(lambda fid, self=self: self._on_tile_deleted(fid))
             row, col = divmod(idx, max_cols)
             self.faces_layout.addWidget(tile, row, col, alignment=Qt.AlignmentFlag.AlignTop)
             self.current_tiles.append(tile)
@@ -348,6 +350,10 @@ class ClusteringPage(QWidget):
     def _delete_face(self, face_id: int) -> None:
         self.face_repo.delete(face_id)
         self.context.conn.commit()
+
+    def _on_tile_deleted(self, face_id: int) -> None:
+        # Refresh current cluster after a delete
+        self._show_cluster()
 
     def _assign_person(self, face_id: int, person_id: int | None) -> None:
         self.face_repo.update_person(face_id, person_id)

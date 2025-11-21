@@ -66,6 +66,7 @@ class FaceTile(QWidget):
     personRenamed = pyqtSignal(int, str)
     personCreated = pyqtSignal(int, str)
     openOriginalRequested = pyqtSignal(int)
+    dataChanged = pyqtSignal(int)
 
     def __init__(
         self,
@@ -209,6 +210,7 @@ class FaceTile(QWidget):
         try:
             self.delete_face_cb(self.data.face_id)
             self.deleteCompleted.emit(self.data.face_id)
+            self.dataChanged.emit(self.data.face_id)
         except Exception as exc:  # pragma: no cover - UI safety
             QMessageBox.critical(self, "Delete failed", str(exc))
 
