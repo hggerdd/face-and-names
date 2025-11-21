@@ -21,7 +21,7 @@ This plan derives from `docs/requirements.md` and defines milestones, scope, and
 - Requirements coverage: Data Model, FR-007/008/020/022/044/058/059, NFR-004/012/014.
 - Deliverables:
   - DB schema DDL: Image, Face, ImportSession, Metadata, Person, Group, PersonGroup, Stats tables; constraints and indexes.
-  - Storage strategy: thumbnails and face crops (BLOB vs files), size/quality targets (NFR-012), FK-safe clear/reset (FR-044).
+- Storage strategy: thumbnails and face crops stored as BLOBs in SQLite (FR-072/FR-078) with size/quality targets (NFR-012), FK-safe clear/reset (FR-044).
   - Portability rules: relative paths rooted at DB Root, relink behavior on mount changes (FR-002, NFR-004).
   - Optional encryption hooks for DB and media (NFR-014).
 

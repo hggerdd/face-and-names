@@ -47,6 +47,7 @@ Requirement coverage: align with `docs/requirements.md`. Tests are mapped by ID 
 - `pytest` for functional/resilience; fixtures for sample images/DB roots.
 - Performance harness to measure startup and throughput; runs gated on target hardware profiles.
 - Lint/format via `ruff`; optional type checks via `mypy`.
+- Traceability matrix lives in `docs/traceability.md`; update it with test IDs and coverage status.
 
 ## Traceability
 - Each test case tagged with requirement IDs for coverage matrix; maintain coverage table linking IDs to tests.

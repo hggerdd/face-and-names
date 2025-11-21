@@ -13,7 +13,7 @@ This document summarizes the proposed architecture aligned to `docs/requirements
   - `PeopleService`: people/groups CRUD, merge/rename, alias collisions, group hierarchy (FR-030..033, FR-045..047, FR-068..070).
   - `ExportImportService`: JSON/CSV export/import, conflict handling, relink support (FR-055..057).
   - `DiagnosticsService`: health checks for models/DB/device/cache; repair tools; self-test (FR-048..054, FR-057).
-- **Data layer**: SQLite database with tables per conceptual model; optional media-on-disk for thumbnails/crops; relative paths rooted at DB Root (FR-002).
+- **Data layer**: SQLite database with tables per conceptual model; thumbnails and face crops stored as BLOBs inside SQLite for portability (FR-072/FR-078); relative paths rooted at DB Root (FR-002).
 - **Background workers**: bounded pool with priority lanes; job metadata for progress (counts/histograms), cancellation tokens, and resumable state (FR-009, FR-052/053).
 
 ## Data Flow (Key Operations)
@@ -37,10 +37,10 @@ This document summarizes the proposed architecture aligned to `docs/requirements
 
 ## Storage Strategy
 - DB: normalized schema per Data Model (Image, Face, ImportSession, Metadata, Person, Group, PersonGroup, Stats). Indices on hashes, person_id, cluster_id, import_id.
-- Media: thumbnails (~<=500px) stored as BLOBs in SQLite (FR-072); face crops may use on-disk cache under DB Root; record paths if on-disk. Size/quality budgets documented (NFR-012).
+- Media: thumbnails (~<=500px) **and face crops** stored as BLOBs in SQLite (FR-072/FR-078) to keep DB Roots portable; size/quality budgets documented (NFR-012).
 - Paths: store relative to DB Root; relink logic uses hashes + relative paths when root moves (FR-002, FR-056).
 - Identity: SHA-256 (primary) + 64-bit pHash; collision policy per plan (FR-003, FR-058/059).
-- Schema specifics recorded in `docs/schema.md` (numeric bbox columns; normalized aliases); dependencies in `docs/dependencies.md`.
+- Schema specifics recorded in `docs/schema.md` (numeric bbox columns; normalized aliases); dependencies in `docs/dependencies.md`. Maintain a `schema_version` table and apply forward migrations explicitly instead of re-running the full DDL on startup.
 ## Configuration
 - Global: app settings (device preference, default thresholds, worker caps, logging levels).
 - DB-scoped: last folder selections, ingest options, thresholds overrides, UI preferences for that DB Root.

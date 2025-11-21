@@ -1,6 +1,6 @@
 # Face-and-Names v2 – Proposed SQLite Schema
 
-This document proposes the initial SQLite schema aligned to `docs/requirements.md`, `docs/plan.md`, and `docs/architecture.md`. DDL is illustrative; adjust naming as needed. Media (thumbnails/crops) are stored on disk under the DB Root cache to avoid DB bloat; paths are recorded. All image paths are relative to the DB Root.
+This document proposes the initial SQLite schema aligned to `docs/requirements.md`, `docs/plan.md`, and `docs/architecture.md`. DDL is illustrative; adjust naming as needed. Thumbnails and face crops **are stored as BLOBs inside SQLite** per FR-072/FR-078 to keep DB Roots self-contained and portable. All image paths are relative to the DB Root.
 
 ## Tables
 
@@ -45,7 +45,7 @@ This document proposes the initial SQLite schema aligned to `docs/requirements.m
 - `bbox_rel_y` REAL NOT NULL
 - `bbox_rel_w` REAL NOT NULL
 - `bbox_rel_h` REAL NOT NULL
-- `face_crop_path` TEXT NOT NULL -- path under cache for face JPEG
+- `face_crop_blob` BLOB NOT NULL -- JPEG bytes stored in DB
 - `cluster_id` INTEGER
 - `person_id` INTEGER REFERENCES person(id)
 - `predicted_person_id` INTEGER REFERENCES person(id)
@@ -98,10 +98,14 @@ This document proposes the initial SQLite schema aligned to `docs/requirements.m
 - Secondary near-duplicate surface: `perceptual_hash` with Hamming distance search.
 - Relink strategy when DB Root moves: scan for matching `content_hash` within new root; if missing, fallback to perceptual hash + filename/subfolder hints; log conflicts.
 
+## Schema Versioning and Migrations
+- Add a `schema_version` table (single row) to track applied migrations. Application startup must read this version and apply forward migrations explicitly instead of re-running the entire DDL.
+- Migrations should be additive and idempotent; schema changes that move media storage must include online copy steps to keep DB Roots portable.
+- Tests should cover migration from previous versions and verify foreign-key safety.
+
 ## Notes
 - All paths stored relative to DB Root (FR-002).
 - Use `PRAGMA foreign_keys = ON`.
 - Consider `WITHOUT ROWID` only after profiling; default rowid tables for simplicity.
-- BLOB storage in DB is avoided for thumbnails/crops to keep DB size manageable; switching to BLOB is possible if required by deployment constraints.
 - Bounding boxes stored as numeric columns to simplify filtering/querying (e.g., min face size enforcement) and avoid JSON parsing overhead.
 - Aliases/short names are normalized into `person_alias` to support uniqueness checks and merges without string parsing.
