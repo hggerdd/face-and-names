@@ -114,6 +114,7 @@ class PredictionReviewPage(QWidget):
         self._load_faces()
 
     def _load_people(self) -> None:
+        current_id = self._selected_person_id()
         self.people_list.clear()
         people = sorted(self.people_service.list_people(), key=lambda p: p.get("display_name") or p.get("primary_name"))
         counts = self._predicted_counts()
@@ -124,7 +125,13 @@ class PredictionReviewPage(QWidget):
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, person.get("id"))
             self.people_list.addItem(item)
-        if self.people_list.count() and not self.people_list.selectedItems():
+        # Preserve previous selection when possible
+        if current_id is not None:
+            for row in range(self.people_list.count()):
+                if self.people_list.item(row).data(Qt.ItemDataRole.UserRole) == current_id:
+                    self.people_list.setCurrentRow(row)
+                    break
+        elif self.people_list.count() and not self.people_list.selectedItems():
             self.people_list.setCurrentRow(0)
 
     def _predicted_counts(self) -> dict[int, int]:
