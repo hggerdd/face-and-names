@@ -68,6 +68,7 @@ class ClusteringWorker(QObject):
         algorithm: str,
         eps: float,
         min_samples: int,
+        k_clusters: int,
         feature_source: str,
     ) -> None:
         super().__init__()
@@ -78,6 +79,7 @@ class ClusteringWorker(QObject):
         self.algorithm = algorithm
         self.eps = eps
         self.min_samples = min_samples
+        self.k_clusters = k_clusters
         self.feature_source = feature_source
 
     def run(self) -> None:
@@ -90,6 +92,7 @@ class ClusteringWorker(QObject):
                 folders=self.folders,
                 eps=self.eps,
                 min_samples=self.min_samples,
+                k_clusters=self.k_clusters,
                 algorithm=self.algorithm,
                 feature_source=self.feature_source,
             )
