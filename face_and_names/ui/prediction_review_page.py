@@ -62,6 +62,7 @@ class PredictionReviewPage(QWidget):
         self.max_conf.setValue(1.0)
         self.unnamed_only = QCheckBox("Unnamed only (no assigned name)")
         self.refresh_btn = QPushButton("Refresh")
+        self.accept_btn = QPushButton("Take prediction over")
 
         self.faces_area = QScrollArea()
         self.faces_area.setWidgetResizable(True)
@@ -86,6 +87,7 @@ class PredictionReviewPage(QWidget):
         filters.addWidget(self.unnamed_only)
         filters.addStretch(1)
         filters.addWidget(self.refresh_btn)
+        filters.addWidget(self.accept_btn)
 
         main = QHBoxLayout()
         left = QVBoxLayout()
@@ -104,6 +106,7 @@ class PredictionReviewPage(QWidget):
         self.max_conf.valueChanged.connect(lambda _: self._load_faces())
         self.unnamed_only.stateChanged.connect(lambda _: self._load_faces())
         self.refresh_btn.clicked.connect(self.refresh_data)
+        self.accept_btn.clicked.connect(self._accept_predictions)
 
     def _on_person_selected(self) -> None:
         self._load_faces()
@@ -246,6 +249,25 @@ class PredictionReviewPage(QWidget):
         self.context.conn.commit()
         self._load_faces()
         self._load_people()
+
+    def _selected_tiles(self) -> list[FaceTile]:
+        return [t for t in self.current_tiles if t.is_selected()]
+
+    def _accept_predictions(self) -> None:
+        tiles = self._selected_tiles()
+        if not tiles:
+            QMessageBox.information(self, "No selection", "Select one or more faces to accept predictions.")
+            return
+        try:
+            for tile in tiles:
+                if tile.data.predicted_person_id is None:
+                    continue
+                self.face_repo.update_person(tile.data.face_id, tile.data.predicted_person_id)
+            self.context.conn.commit()
+            self._load_faces()
+            self._load_people()
+        except Exception as exc:  # pragma: no cover - UI safety
+            QMessageBox.critical(self, "Accept failed", str(exc))
     def _after_change(self) -> None:
         self._load_faces()
         self._load_people()
