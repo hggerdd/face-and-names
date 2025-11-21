@@ -38,7 +38,7 @@ from face_and_names.services.clustering_service import (
     ClusterResult,
 )
 from face_and_names.services.people_service import PeopleService
-from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
+from face_and_names.ui.components.face_tile import FaceTile, FaceTileData, PersonSelectDialog
 from face_and_names.ui.faces_page import FaceImageView
 
 
@@ -124,6 +124,7 @@ class ClusteringPage(QWidget):
         self.min_samples_spin.setValue(1)
         self.status_label = QLabel("Select folders and run clustering.")
         self.run_btn = QPushButton("Run clustering")
+        self.set_name_btn = QPushButton("Set name")
         self.prev_btn = QPushButton("Previous cluster")
         self.next_btn = QPushButton("Next cluster")
         self.prev_btn.setEnabled(False)
@@ -141,6 +142,7 @@ class ClusteringPage(QWidget):
         self.faces_inner.setLayout(self.faces_layout)
         self.faces_area.setWidget(self.faces_inner)
         self.state = ClusterState(clusters=[])
+        self.current_tiles: list[FaceTile] = []
 
         self._build_ui()
         self._load_folders()
@@ -166,6 +168,7 @@ class ClusteringPage(QWidget):
         buttons = QHBoxLayout()
         buttons.addWidget(self.run_btn)
         buttons.addStretch(1)
+        buttons.addWidget(self.set_name_btn)
         buttons.addWidget(self.prev_btn)
         buttons.addWidget(self.next_btn)
 
@@ -180,6 +183,7 @@ class ClusteringPage(QWidget):
         self.setLayout(layout)
 
         self.run_btn.clicked.connect(self._run_clustering)
+        self.set_name_btn.clicked.connect(self._batch_set_name)
         self.prev_btn.clicked.connect(self._prev_cluster)
         self.next_btn.clicked.connect(self._next_cluster)
 
@@ -278,6 +282,7 @@ class ClusteringPage(QWidget):
         self._render_faces(cluster)
 
     def _clear_faces(self) -> None:
+        self.current_tiles = []
         while self.faces_layout.count():
             item = self.faces_layout.takeAt(0)
             widget = item.widget()
@@ -313,6 +318,7 @@ class ClusteringPage(QWidget):
             )
             row, col = divmod(idx, max_cols)
             self.faces_layout.addWidget(tile, row, col, alignment=Qt.AlignmentFlag.AlignTop)
+            self.current_tiles.append(tile)
 
     def _face_record(self, face_id: int) -> dict:
         row = self.context.conn.execute(
@@ -360,3 +366,29 @@ class ClusteringPage(QWidget):
         window.setLayout(layout)
         window.resize(800, 600)
         window.exec()
+
+    def _selected_tiles(self) -> list[FaceTile]:
+        return [t for t in self.current_tiles if t.is_selected()]
+
+    def _batch_set_name(self) -> None:
+        cluster = self.state.current
+        if cluster is None:
+            return
+        tiles = self._selected_tiles()
+        if not tiles:
+            QMessageBox.information(self, "No selection", "Select one or more faces to set a name.")
+            return
+        persons = list(self.people_service.list_people())
+        dlg = PersonSelectDialog(
+            persons=persons,
+            create_person=self.people_service.create_person,
+            rename_person=self.people_service.rename_person,
+            parent=self,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted or dlg.selected_person_id is None:
+            return
+        pid = dlg.selected_person_id
+        for tile in tiles:
+            self.face_repo.update_person(tile.data.face_id, pid)
+        self.context.conn.commit()
+        self._show_cluster()
