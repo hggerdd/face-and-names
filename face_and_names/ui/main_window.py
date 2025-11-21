@@ -27,6 +27,7 @@ from face_and_names.ui.clustering_page import ClusteringPage
 from face_and_names.ui.people_groups_page import PeopleGroupsPage
 from face_and_names.ui.prediction_training_page import PredictionTrainingPage
 from face_and_names.ui.prediction_review_page import PredictionReviewPage
+from face_and_names.ui.settings_page import SettingsPage
 
 
 class MainWindow(QMainWindow):
@@ -86,7 +87,7 @@ class MainWindow(QMainWindow):
             widget=PeopleGroupsPage(self.context.people_service if hasattr(self.context, "people_service") else None),
         )
         self._add_page("Diagnostics", "Model/DB health, self-test, repair tools")
-        self._add_page("Settings", "App preferences, device/worker caps, paths")
+        self._add_page("Settings", "App preferences, device/worker caps, paths", widget=SettingsPage(self.context))
 
         # Default selection
         if self.nav.count():
