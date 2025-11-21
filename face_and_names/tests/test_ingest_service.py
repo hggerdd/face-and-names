@@ -92,6 +92,33 @@ def test_ingest_rejects_paths_outside_db_root(tmp_path: Path) -> None:
         pass
 
 
+def test_ingest_skips_invalid_detection_boxes(monkeypatch, tmp_path: Path) -> None:
+    class DummyDetector:
+        def detect_batch(self, images):
+            class Det:
+                bbox_abs = (1.0, 2.0, 3.0)  # invalid length (missing height)
+                bbox_rel = (0.1, 0.1, 0.3)
+                confidence = 0.9
+
+            return [[Det()]]
+
+    db_root = tmp_path / "dbroot"
+    photos = db_root / "photos"
+    img1 = photos / "a.jpg"
+    _make_image(img1, (10, 20))
+
+    conn = initialize_database(db_root / "faces.db")
+    ingest = IngestService(db_root=db_root, conn=conn)
+    monkeypatch.setattr(ingest, "_load_detector", lambda: DummyDetector())
+
+    progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
+
+    assert progress.processed == 1
+    assert progress.face_count == 0
+    face_rows = conn.execute("SELECT COUNT(*) FROM face").fetchone()[0]
+    assert face_rows == 0
+
+
 def test_ingest_supports_cancellation_and_resume(tmp_path: Path) -> None:
     db_root = tmp_path / "dbroot"
     photos = db_root / "photos"

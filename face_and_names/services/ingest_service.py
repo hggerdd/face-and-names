@@ -246,10 +246,10 @@ class IngestService:
         face_preview: list[bytes] | None = None
         faces_added = 0
         if detector is not None:
-            faces = self._detect_faces(detector, normalized_bytes, width, height)
-            faces_added = len(faces)
-            has_faces = 1 if faces_added else 0
-            face_preview = self._persist_faces(faces, image_id, import_id, normalized_bytes, image_path)
+        faces = self._detect_faces(detector, normalized_bytes, width, height)
+        face_preview, stored_faces = self._persist_faces(faces, image_id, import_id, normalized_bytes, image_path)
+        faces_added = stored_faces
+        has_faces = 1 if faces_added else 0
 
         # Update has_faces once detection is known
         self.conn.execute("UPDATE image SET has_faces = ? WHERE id = ?", (has_faces, image_id))
@@ -352,13 +352,17 @@ class IngestService:
         import_id: int,
         normalized_bytes: bytes,
         image_path: Path,
-    ) -> list[bytes]:
+    ) -> tuple[list[bytes], int]:
         preview: list[bytes] = []
+        stored = 0
         if not detections:
-            return preview
+            return preview, stored
         with Image.open(BytesIO(normalized_bytes)) as image:
             image.load()
             for idx, det in enumerate(detections):
+                if len(det.bbox_abs) != 4 or len(det.bbox_rel) != 4:
+                    LOGGER.warning("Skipping invalid detection bbox for %s: %s", image_path, det.bbox_abs)
+                    continue
                 x, y, w, h = det.bbox_abs
                 crop = image.crop((x, y, x + w, y + h))
                 buf = BytesIO()
@@ -375,9 +379,10 @@ class IngestService:
                     prediction_confidence=det.confidence,
                     provenance="detected",
                 )
+                stored += 1
                 if idx < 5:
                     preview.append(crop_bytes)
-        return preview
+        return preview, stored
 
     def _process_single_path(self, path: Path) -> "ProcessedImage":
         try:
