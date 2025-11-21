@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
 from face_and_names.app_context import AppContext
 from face_and_names.training.trainer import TrainingConfig, train_model_from_db
 from face_and_names.services.prediction_service import PredictionService
-from face_and_names.models.repositories import FaceRepository
+from face_and_names.services.prediction_apply import apply_predictions
 from face_and_names.models.db import connect
 
 
@@ -78,14 +78,18 @@ class PredictionApplyWorker(QThread):
 
     def run(self) -> None:
         try:
-            count = apply_predictions(
-                self.context.conn,
-                self.service,
-                unnamed_only=self.unnamed_only,
-                progress=lambda label, pct: self.progress.emit(label, pct),
-                should_stop=lambda: self._stop.is_set(),
-            )
-            self.finished.emit(count)
+            conn = connect(self.context.db_path)
+            try:
+                count = apply_predictions(
+                    conn,
+                    self.service,
+                    unnamed_only=self.unnamed_only,
+                    progress=lambda label, pct: self.progress.emit(label, pct),
+                    should_stop=lambda: self._stop.is_set(),
+                )
+                self.finished.emit(count)
+            finally:
+                conn.close()
         except Exception as exc:  # pragma: no cover - UI safety
             self.failed.emit(str(exc))
 
