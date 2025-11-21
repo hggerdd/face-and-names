@@ -114,6 +114,12 @@ class PeopleService:
         return alias_id
 
     def list_people(self) -> list[dict]:
+        counts = {
+            row[0]: row[1]
+            for row in self.conn.execute(
+                "SELECT person_id, COUNT(*) FROM face WHERE person_id IS NOT NULL GROUP BY person_id"
+            ).fetchall()
+        }
         cols = {row[1] for row in self.conn.execute("PRAGMA table_info(person)")}
         if "first_name" in cols:
             rows = self.conn.execute(
@@ -140,6 +146,7 @@ class PeopleService:
                         "display_name": display,
                         "birthdate": row[2],
                         "notes": row[3],
+                        "face_count": counts.get(pid, 0),
                         "aliases": [{"name": name, "kind": kind} for name, kind in self._aliases_for(pid)],
                     }
                 )
@@ -155,6 +162,7 @@ class PeopleService:
                         "display_name": display,
                         "birthdate": row[5],
                         "notes": row[6],
+                        "face_count": counts.get(pid, 0),
                         "aliases": [{"name": name, "kind": kind} for name, kind in self._aliases_for(pid)],
                     }
                 )

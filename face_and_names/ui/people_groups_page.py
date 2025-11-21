@@ -34,7 +34,7 @@ class PeopleTableModel(QAbstractTableModel):
     def __init__(self, people: List[dict]) -> None:
         super().__init__()
         self.people = people
-        self.headers = ["ID", "First", "Last", "Short", "Display"]
+        self.headers = ["ID", "First", "Last", "Short", "Display", "Faces"]
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         return len(self.people)
@@ -58,6 +58,8 @@ class PeopleTableModel(QAbstractTableModel):
                 return row["short_name"] or ""
             if col == 4:
                 return row["display_name"]
+            if col == 5:
+                return row.get("face_count", 0)
         return None
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = ...) -> object:
