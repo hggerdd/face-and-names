@@ -198,11 +198,18 @@ class PersonRepository:
         birthdate: str | None = None,
         notes: str | None = None,
     ) -> int:
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(person)")}
         display = short_name or f"{first_name} {last_name}".strip()
-        cursor = self.conn.execute(
-            "INSERT INTO person (primary_name, first_name, last_name, short_name, birthdate, notes) VALUES (?, ?, ?, ?, ?, ?)",
-            (display, first_name, last_name, short_name, birthdate, notes),
-        )
+        if {"first_name", "last_name", "short_name"}.issubset(cols):
+            cursor = self.conn.execute(
+                "INSERT INTO person (primary_name, first_name, last_name, short_name, birthdate, notes) VALUES (?, ?, ?, ?, ?, ?)",
+                (display, first_name, last_name, short_name, birthdate, notes),
+            )
+        else:
+            cursor = self.conn.execute(
+                "INSERT INTO person (primary_name, birthdate, notes) VALUES (?, ?, ?)",
+                (display, birthdate, notes),
+            )
         return int(cursor.lastrowid)
 
 

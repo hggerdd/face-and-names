@@ -241,13 +241,12 @@ class FaceTile(QWidget):
         try:
             self.assign_person_cb(self.data.face_id, person_id)
             self.personAssigned.emit(self.data.face_id, person_id)
-            # refresh label to selected name
-            for person in self.list_persons_cb():
-                if person["id"] == person_id:
-                    self.assigned_label.setText(person["primary_name"])
-                    self.data.person_id = person_id
-                    self.data.person_name = person["primary_name"]
-                    break
+            # refresh label to selected name using latest display_name
+            name = self._resolve_display_name(person_id)
+            if name:
+                self.assigned_label.setText(name)
+                self.data.person_id = person_id
+                self.data.person_name = name
         except Exception as exc:  # pragma: no cover
             QMessageBox.critical(self, "Assign failed", str(exc))
 
@@ -267,15 +266,26 @@ class FaceTile(QWidget):
     def _rename_person(self) -> None:
         if not self.data or self.data.person_id is None:
             return
-        current = self.data.person_name or ""
-        new_name, ok = QInputDialog.getText(self, "Rename person", "New name:", text=current)
-        if not ok or not new_name.strip():
+        current = self._resolve_display_name(self.data.person_id) or ""
+        first_last = current.split(" ", 1)
+        first_default = first_last[0] if first_last else ""
+        last_default = first_last[1] if len(first_last) > 1 else ""
+        first_name, ok1 = QInputDialog.getText(self, "Rename person", "First name:", text=first_default)
+        if not ok1:
+            return
+        last_name, ok2 = QInputDialog.getText(self, "Rename person", "Last name:", text=last_default)
+        if not ok2:
+            return
+        short_name, ok3 = QInputDialog.getText(self, "Rename person", "Short name (optional):", text=current)
+        if not ok3:
             return
         try:
-            self.rename_person_cb(self.data.person_id, new_name.strip())
-            self.personRenamed.emit(self.data.person_id, new_name.strip())
-            self.assigned_label.setText(new_name.strip())
-            self.data.person_name = new_name.strip()
+            self.rename_person_cb(self.data.person_id, first_name.strip(), last_name.strip(), short_name.strip() or None)
+            self.personRenamed.emit(self.data.person_id, short_name.strip() or f"{first_name.strip()} {last_name.strip()}".strip())
+            name = self._resolve_display_name(self.data.person_id)
+            if name:
+                self.assigned_label.setText(name)
+                self.data.person_name = name
         except Exception as exc:  # pragma: no cover
             QMessageBox.critical(self, "Rename failed", str(exc))
 
@@ -286,6 +296,12 @@ class FaceTile(QWidget):
             self.open_original_cb(self.data.face_id)
         else:
             self.openOriginalRequested.emit(self.data.face_id)
+
+    def _resolve_display_name(self, person_id: int) -> str | None:
+        for person in self.list_persons_cb():
+            if person.get("id") == person_id:
+                return person.get("display_name") or person.get("primary_name")
+        return None
 
 
 class PersonSelectDialog(QDialog):

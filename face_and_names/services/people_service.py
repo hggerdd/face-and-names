@@ -19,10 +19,23 @@ class PeopleService:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+        self._ensure_person_schema()
         self.people = PersonRepository(conn)
         self.aliases = PersonAliasRepository(conn)
         self.groups = GroupRepository(conn)
         self.person_groups = PersonGroupRepository(conn)
+
+    def _ensure_person_schema(self) -> None:
+        """Add missing person columns for legacy databases."""
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(person)")}
+        if "first_name" not in cols:
+            self.conn.execute("ALTER TABLE person ADD COLUMN first_name TEXT NOT NULL DEFAULT ''")
+        if "last_name" not in cols:
+            self.conn.execute("ALTER TABLE person ADD COLUMN last_name TEXT NOT NULL DEFAULT ''")
+        if "short_name" not in cols:
+            self.conn.execute("ALTER TABLE person ADD COLUMN short_name TEXT")
+        if {"first_name", "last_name", "short_name", "primary_name"}.issubset(cols) is False:
+            self.conn.commit()
 
     @staticmethod
     def display_name(
@@ -101,26 +114,50 @@ class PeopleService:
         return alias_id
 
     def list_people(self) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT id, primary_name, first_name, last_name, short_name, birthdate, notes FROM person ORDER BY primary_name"
-        ).fetchall()
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(person)")}
+        if "first_name" in cols:
+            rows = self.conn.execute(
+                "SELECT id, primary_name, first_name, last_name, short_name, birthdate, notes FROM person ORDER BY primary_name"
+            ).fetchall()
+            is_legacy = False
+        else:
+            rows = self.conn.execute(
+                "SELECT id, primary_name, birthdate, notes FROM person ORDER BY primary_name"
+            ).fetchall()
+            is_legacy = True
         people: list[dict] = []
         for row in rows:
             pid = int(row[0])
-            display = self.display_name(row[2], row[3], row[4], row[1])
-            people.append(
-                {
-                    "id": pid,
-                    "primary_name": row[1],
-                    "first_name": row[2],
-                    "last_name": row[3],
-                    "short_name": row[4],
-                    "display_name": display,
-                    "birthdate": row[5],
-                    "notes": row[6],
-                    "aliases": [{"name": name, "kind": kind} for name, kind in self._aliases_for(pid)],
-                }
-            )
+            if is_legacy:
+                display = self.display_name(None, None, None, row[1])
+                people.append(
+                    {
+                        "id": pid,
+                        "primary_name": row[1],
+                        "first_name": "",
+                        "last_name": "",
+                        "short_name": None,
+                        "display_name": display,
+                        "birthdate": row[2],
+                        "notes": row[3],
+                        "aliases": [{"name": name, "kind": kind} for name, kind in self._aliases_for(pid)],
+                    }
+                )
+            else:
+                display = self.display_name(row[2], row[3], row[4], row[1])
+                people.append(
+                    {
+                        "id": pid,
+                        "primary_name": row[1],
+                        "first_name": row[2],
+                        "last_name": row[3],
+                        "short_name": row[4],
+                        "display_name": display,
+                        "birthdate": row[5],
+                        "notes": row[6],
+                        "aliases": [{"name": name, "kind": kind} for name, kind in self._aliases_for(pid)],
+                    }
+                )
         return people
 
     def create_group(
@@ -141,9 +178,13 @@ class PeopleService:
     def rename_person(
         self, person_id: int, first_name: str, last_name: str, short_name: str | None = None
     ) -> None:
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(person)")}
         display = self.display_name(first_name, last_name, short_name)
-        self.conn.execute(
-            "UPDATE person SET primary_name = ?, first_name = ?, last_name = ?, short_name = ? WHERE id = ?",
-            (display, first_name, last_name, short_name, person_id),
-        )
+        if {"first_name", "last_name", "short_name"}.issubset(cols):
+            self.conn.execute(
+                "UPDATE person SET primary_name = ?, first_name = ?, last_name = ?, short_name = ? WHERE id = ?",
+                (display, first_name, last_name, short_name, person_id),
+            )
+        else:
+            self.conn.execute("UPDATE person SET primary_name = ? WHERE id = ?", (display, person_id))
         self.conn.commit()
