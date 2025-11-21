@@ -339,7 +339,7 @@ class PersonSelectDialog(QDialog):
         return self.list_widget.currentRow()
 
     def _add_person(self) -> None:
-        name, ok = QInputDialog.getText(self, "Add person", "Name:", parent=self)
+        name, ok = QInputDialog.getText(self, "Add person", "Name:")
         if not ok or not name.strip():
             return
         pid = self.create_person_cb(name.strip())
@@ -352,7 +352,7 @@ class PersonSelectDialog(QDialog):
         if idx < 0 or idx >= len(self.persons):
             return
         current = self.persons[idx]["primary_name"]
-        new_name, ok = QInputDialog.getText(self, "Rename person", "New name:", text=current, parent=self)
+        new_name, ok = QInputDialog.getText(self, "Rename person", "New name:", text=current)
         if not ok or not new_name.strip():
             return
         pid = self.persons[idx]["id"]
