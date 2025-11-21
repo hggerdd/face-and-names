@@ -12,8 +12,8 @@ from face_and_names.services.ingest_service import IngestOptions, IngestService
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
-def _make_image(path: Path, size: tuple[int, int], orientation: int | None = None) -> None:
-    image = Image.new("RGB", size, color="red")
+def _make_image(path: Path, size: tuple[int, int], orientation: int | None = None, color: str = "red") -> None:
+    image = Image.new("RGB", size, color=color)
     exif = Image.Exif()
     if orientation is not None:
         exif[274] = orientation
@@ -124,8 +124,9 @@ def test_ingest_supports_cancellation_and_resume(tmp_path: Path) -> None:
     db_root = tmp_path / "dbroot"
     photos = db_root / "photos"
     imgs = [photos / f"img{i}.jpg" for i in range(3)]
-    for path in imgs:
-        _make_image(path, (10, 10))
+    colors = ["red", "green", "blue"]
+    for path, color in zip(imgs, colors):
+        _make_image(path, (10, 10), color=color)
 
     conn = initialize_database(db_root / "faces.db")
     ingest = IngestService(db_root=db_root, conn=conn)

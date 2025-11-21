@@ -7,6 +7,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
+from face_and_names.models.repositories import FaceRepository
+from face_and_names.services.people_service import PeopleService
+from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QPen, QPixmap, QPainter
 from PyQt6.QtWidgets import (
@@ -26,6 +29,9 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
+    QScrollArea,
+    QDialog,
+    QMessageBox,
 )
 
 from face_and_names.app_context import AppContext
@@ -77,6 +83,8 @@ class FacesPage(QWidget):
     def __init__(self, context: AppContext) -> None:
         super().__init__()
         self.context = context
+        self.people_service = PeopleService(context.conn)
+        self.face_repo = FaceRepository(context.conn)
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.image_list = QListWidget()
@@ -92,6 +100,14 @@ class FacesPage(QWidget):
         self.face_table.verticalHeader().setVisible(False)
         self.face_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.face_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.face_tiles_area = QScrollArea()
+        self.face_tiles_area.setWidgetResizable(True)
+        self.face_tiles_inner = QWidget()
+        self.face_tiles_layout = QHBoxLayout()
+        self.face_tiles_layout.setContentsMargins(4, 4, 4, 4)
+        self.face_tiles_layout.setSpacing(8)
+        self.face_tiles_inner.setLayout(self.face_tiles_layout)
+        self.face_tiles_area.setWidget(self.face_tiles_inner)
         self.page_size = 200
         self.current_folder: str = ""
         self.current_offset = 0
@@ -114,6 +130,8 @@ class FacesPage(QWidget):
         root_layout.addWidget(splitter)
         root_layout.addWidget(QLabel("Faces in image:"))
         root_layout.addWidget(self.face_table)
+        root_layout.addWidget(QLabel("Face tiles:"))
+        root_layout.addWidget(self.face_tiles_area)
         root_layout.addWidget(self.status)
         self.setLayout(root_layout)
 
@@ -227,6 +245,7 @@ class FacesPage(QWidget):
         boxes = self._load_face_boxes(rec.image_id)
         self.preview.show_image(pix, boxes)
         self._load_face_table(rec.image_id)
+        self._load_face_tiles(rec.image_id)
         self.status.setText(f"{rec.filename}: {len(boxes)} faces")
 
     def _load_face_boxes(self, image_id: int) -> List[tuple[float, float, float, float]]:
@@ -239,6 +258,99 @@ class FacesPage(QWidget):
             (image_id,),
         ).fetchall()
         return [(float(r[0]), float(r[1]), float(r[2]), float(r[3])) for r in rows]
+
+    def _load_face_tiles(self, image_id: int) -> None:
+        # Clear existing
+        while self.face_tiles_layout.count():
+            item = self.face_tiles_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        rows = self.context.conn.execute(
+            """
+            SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id, pp.primary_name, f.prediction_confidence, f.face_crop_blob
+            FROM face f
+            LEFT JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            WHERE f.image_id = ?
+            ORDER BY f.id
+            """,
+            (image_id,),
+        ).fetchall()
+        for row in rows:
+            data = FaceTileData(
+                face_id=int(row[0]),
+                person_id=row[1],
+                person_name=row[2],
+                predicted_person_id=row[3],
+                predicted_name=row[4],
+                confidence=row[5],
+                crop=bytes(row[6]),
+            )
+            tile = FaceTile(
+                data,
+                delete_face=self._delete_face,
+                assign_person=self._assign_person,
+                list_persons=self.people_service.list_people,
+                create_person=self._create_person,
+                rename_person=self.people_service.rename_person,
+                open_original=self._open_original_image,
+            )
+            tile.deleteCompleted.connect(self._on_face_deleted)
+            tile.personAssigned.connect(lambda fid, pid, img_id=image_id: self._refresh_after_change(img_id))
+            tile.personCreated.connect(lambda _, __, img_id=image_id: self._refresh_after_change(img_id))
+            tile.personRenamed.connect(lambda _, __, img_id=image_id: self._refresh_after_change(img_id))
+            self.face_tiles_layout.addWidget(tile)
+        self.face_tiles_layout.addStretch(1)
+
+    def _refresh_after_change(self, image_id: int) -> None:
+        self._load_face_tiles(image_id)
+        boxes = self._load_face_boxes(image_id)
+        if self.image_list.selectedItems():
+            rec: ImageRecord = self.image_list.selectedItems()[0].data(Qt.ItemDataRole.UserRole)
+            pix = QPixmap()
+            if pix.loadFromData(rec.thumb):
+                self.preview.show_image(pix, boxes)
+        self._load_face_table(image_id)
+
+    def _delete_face(self, face_id: int) -> None:
+        self.face_repo.delete(face_id)
+        self.context.conn.commit()
+
+    def _assign_person(self, face_id: int, person_id: int | None) -> None:
+        self.face_repo.update_person(face_id, person_id)
+        self.context.conn.commit()
+
+    def _create_person(self, name: str) -> int:
+        pid = self.people_service.create(name)
+        return pid
+
+    def _on_face_deleted(self, face_id: int) -> None:
+        # Refresh current image view if visible
+        items = self.image_list.selectedItems()
+        if items:
+            rec: ImageRecord = items[0].data(Qt.ItemDataRole.UserRole)
+            self._refresh_after_change(rec.image_id)
+
+    def _open_original_image(self, face_id: int) -> None:
+        row = self.face_repo.get_face_with_image(face_id)
+        if row is None:
+            return
+        _, image_id, x, y, w, h, rel_path, img_w, img_h = row
+        img_path = self.context.db_path.parent / rel_path
+        if not img_path.exists():
+            QMessageBox.warning(self, "Image missing", f"File not found: {img_path}")
+            return
+        pix = QPixmap(str(img_path))
+        window = QDialog(self)
+        window.setWindowTitle("Original image")
+        view = FaceImageView()
+        view.show_image(pix, [(float(x), float(y), float(w), float(h))])
+        layout = QVBoxLayout()
+        layout.addWidget(view)
+        window.setLayout(layout)
+        window.resize(800, 600)
+        window.exec()
 
     def _load_face_table(self, image_id: int) -> None:
         rows = self.context.conn.execute(

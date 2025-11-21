@@ -164,6 +164,25 @@ class FaceRepository:
         )
         return int(cursor.lastrowid)
 
+    def delete(self, face_id: int) -> None:
+        self.conn.execute("DELETE FROM face WHERE id = ?", (face_id,))
+
+    def update_person(self, face_id: int, person_id: int | None) -> None:
+        self.conn.execute("UPDATE face SET person_id = ? WHERE id = ?", (person_id, face_id))
+
+    def get_face_with_image(self, face_id: int) -> tuple | None:
+        cursor = self.conn.execute(
+            """
+            SELECT f.id, f.image_id, f.bbox_rel_x, f.bbox_rel_y, f.bbox_rel_w, f.bbox_rel_h,
+                   i.relative_path, i.width, i.height
+            FROM face f
+            JOIN image i ON i.id = f.image_id
+            WHERE f.id = ?
+            """,
+            (face_id,),
+        )
+        return cursor.fetchone()
+
 
 class PersonRepository:
     """CRUD for person records."""

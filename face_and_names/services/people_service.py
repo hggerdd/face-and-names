@@ -112,3 +112,7 @@ class PeopleService:
     def assign_groups(self, person_id: int, group_ids: list[int]) -> None:
         self.person_groups.add_memberships(person_id, group_ids)
         self.conn.commit()
+
+    def rename_person(self, person_id: int, new_name: str) -> None:
+        self.conn.execute("UPDATE person SET primary_name = ? WHERE id = ?", (new_name, person_id))
+        self.conn.commit()

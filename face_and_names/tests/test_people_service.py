@@ -101,3 +101,14 @@ def test_merge_people_rebinds_faces_and_aliases(tmp_path: Path) -> None:
 
     row = conn.execute("SELECT 1 FROM person WHERE id = ?", (source,)).fetchone()
     assert row is None
+
+
+def test_rename_person_updates_name(tmp_path: Path) -> None:
+    conn = initialize_database(tmp_path / "faces.db")
+    service = PeopleService(conn)
+
+    pid = service.create_person("Old Name")
+    service.rename_person(pid, "New Name")
+
+    row = conn.execute("SELECT primary_name FROM person WHERE id = ?", (pid,)).fetchone()
+    assert row[0] == "New Name"
