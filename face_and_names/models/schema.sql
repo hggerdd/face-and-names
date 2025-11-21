@@ -72,6 +72,9 @@ CREATE INDEX IF NOT EXISTS idx_face_predicted_person_id ON face(predicted_person
 CREATE TABLE IF NOT EXISTS person (
     id INTEGER PRIMARY KEY,
     primary_name TEXT NOT NULL UNIQUE,
+    first_name TEXT NOT NULL DEFAULT '',
+    last_name TEXT NOT NULL DEFAULT '',
+    short_name TEXT,
     birthdate TEXT,
     notes TEXT
 );

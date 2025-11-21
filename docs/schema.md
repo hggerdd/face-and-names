@@ -55,7 +55,10 @@ This document proposes the initial SQLite schema aligned to `docs/requirements.m
 
 ### person
 - `id` INTEGER PRIMARY KEY
-- `primary_name` TEXT NOT NULL UNIQUE
+- `primary_name` TEXT NOT NULL UNIQUE -- derived display name (short_name if present else first + last)
+- `first_name` TEXT NOT NULL DEFAULT ''
+- `last_name` TEXT NOT NULL DEFAULT ''
+- `short_name` TEXT -- optional preferred short display
 - `birthdate` TEXT -- ISO date string
 - `notes` TEXT
 

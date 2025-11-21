@@ -24,14 +24,34 @@ class PeopleService:
         self.groups = GroupRepository(conn)
         self.person_groups = PersonGroupRepository(conn)
 
+    @staticmethod
+    def display_name(
+        first_name: str | None = None,
+        last_name: str | None = None,
+        short_name: str | None = None,
+        primary_name: str | None = None,
+    ) -> str:
+        if short_name:
+            return short_name
+        combined = " ".join(filter(None, [first_name, last_name])).strip()
+        return combined or (primary_name or "")
+
     def create_person(
         self,
-        name: str,
+        first_name: str,
+        last_name: str,
+        short_name: str | None = None,
         aliases: list[str] | None = None,
         birthdate: str | None = None,
         notes: str | None = None,
     ) -> int:
-        person_id = self.people.create(primary_name=name, birthdate=birthdate, notes=notes)
+        person_id = self.people.create(
+            first_name=first_name,
+            last_name=last_name,
+            short_name=short_name,
+            birthdate=birthdate,
+            notes=notes,
+        )
         for alias in aliases or []:
             try:
                 self.aliases.add_alias(person_id, alias, kind="alias")
@@ -82,17 +102,22 @@ class PeopleService:
 
     def list_people(self) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT id, primary_name, birthdate, notes FROM person ORDER BY primary_name"
+            "SELECT id, primary_name, first_name, last_name, short_name, birthdate, notes FROM person ORDER BY primary_name"
         ).fetchall()
         people: list[dict] = []
         for row in rows:
             pid = int(row[0])
+            display = self.display_name(row[2], row[3], row[4], row[1])
             people.append(
                 {
                     "id": pid,
                     "primary_name": row[1],
-                    "birthdate": row[2],
-                    "notes": row[3],
+                    "first_name": row[2],
+                    "last_name": row[3],
+                    "short_name": row[4],
+                    "display_name": display,
+                    "birthdate": row[5],
+                    "notes": row[6],
                     "aliases": [{"name": name, "kind": kind} for name, kind in self._aliases_for(pid)],
                 }
             )
@@ -113,6 +138,12 @@ class PeopleService:
         self.person_groups.add_memberships(person_id, group_ids)
         self.conn.commit()
 
-    def rename_person(self, person_id: int, new_name: str) -> None:
-        self.conn.execute("UPDATE person SET primary_name = ? WHERE id = ?", (new_name, person_id))
+    def rename_person(
+        self, person_id: int, first_name: str, last_name: str, short_name: str | None = None
+    ) -> None:
+        display = self.display_name(first_name, last_name, short_name)
+        self.conn.execute(
+            "UPDATE person SET primary_name = ?, first_name = ?, last_name = ?, short_name = ? WHERE id = ?",
+            (display, first_name, last_name, short_name, person_id),
+        )
         self.conn.commit()

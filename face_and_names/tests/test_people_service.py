@@ -41,11 +41,11 @@ def test_create_person_adds_aliases(tmp_path: Path) -> None:
     conn = initialize_database(tmp_path / "faces.db")
     service = PeopleService(conn)
 
-    pid = service.create_person("Alice", aliases=["Al", "A"])
+    pid = service.create_person("Alice", "Doe", short_name="Ali", aliases=["Al", "A"])
     people = service.list_people()
 
     assert pid > 0
-    assert people[0]["primary_name"] == "Alice"
+    assert people[0]["display_name"] == "Ali"
     assert {"name": "Al", "kind": "alias"} in people[0]["aliases"]
 
 
@@ -54,8 +54,8 @@ def test_merge_people_rebinds_faces_and_aliases(tmp_path: Path) -> None:
     img_id = _insert_import_and_image(conn, tmp_path)
     service = PeopleService(conn)
 
-    source = service.create_person("Person One", aliases=["P1"])
-    target = service.create_person("Person Two", aliases=["P2"])
+    source = service.create_person("Person", "One", aliases=["P1"])
+    target = service.create_person("Person", "Two", aliases=["P2"])
     group_id = service.create_group("Family")
     service.assign_groups(source, [group_id])
     conn.execute(
@@ -107,8 +107,9 @@ def test_rename_person_updates_name(tmp_path: Path) -> None:
     conn = initialize_database(tmp_path / "faces.db")
     service = PeopleService(conn)
 
-    pid = service.create_person("Old Name")
-    service.rename_person(pid, "New Name")
+    pid = service.create_person("Old", "Name")
+    service.rename_person(pid, "New", "Name", short_name="NN")
 
-    row = conn.execute("SELECT primary_name FROM person WHERE id = ?", (pid,)).fetchone()
-    assert row[0] == "New Name"
+    row = conn.execute("SELECT primary_name, short_name FROM person WHERE id = ?", (pid,)).fetchone()
+    assert row[0] == "NN"
+    assert row[1] == "NN"

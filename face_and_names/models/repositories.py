@@ -190,10 +190,18 @@ class PersonRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def create(self, primary_name: str, birthdate: str | None = None, notes: str | None = None) -> int:
+    def create(
+        self,
+        first_name: str,
+        last_name: str,
+        short_name: str | None = None,
+        birthdate: str | None = None,
+        notes: str | None = None,
+    ) -> int:
+        display = short_name or f"{first_name} {last_name}".strip()
         cursor = self.conn.execute(
-            "INSERT INTO person (primary_name, birthdate, notes) VALUES (?, ?, ?)",
-            (primary_name, birthdate, notes),
+            "INSERT INTO person (primary_name, first_name, last_name, short_name, birthdate, notes) VALUES (?, ?, ?, ?, ?, ?)",
+            (display, first_name, last_name, short_name, birthdate, notes),
         )
         return int(cursor.lastrowid)
 
