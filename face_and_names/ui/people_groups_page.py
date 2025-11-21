@@ -133,6 +133,11 @@ class PeopleGroupsPage(QWidget):
         people = self.people_service.list_people()
         self.model.update_people(people)
 
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        """Refresh people list whenever the page is shown."""
+        self._refresh()
+        return super().showEvent(event)
+
     def _selected_person(self) -> dict | None:
         idx = self.table.currentIndex()
         if not idx.isValid():
