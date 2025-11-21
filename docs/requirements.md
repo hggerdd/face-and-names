@@ -32,7 +32,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-075** The first processed image shall trigger an immediate preview in the ingest UI, then continue showing every 10th image thereafter. **[DER][USER]**
 - **FR-076** Ingest shall support parallelized file reads (e.g., thread pool) to reduce latency when loading many images. **[DER][USER]**
 - **FR-077** Ingest shall parallelize image processing (read + normalize + hash + thumbnail + metadata) across worker threads and enqueue DB writes to improve throughput. **[DER][USER]**
-- **FR-078** Face crops shall be stored as BLOBs inside SQLite, and ingest previews (first then every 10th image) shall include up to 5 detected face thumbnails beneath the image preview. **[DER][USER]**
+- **FR-078** Face crops shall be stored as BLOBs inside SQLite, and ingest previews (first then every 10th image) shall include up to 5 detected face thumbnails beneath the image preview. Face crops shall be normalized to a configurable target size (default 224px square) with aspect-ratio-preserving padding to maintain consistent clustering/model inputs. **[DER][USER]**
 - **FR-079** The Faces view shall display a folder tree from the DB, show image thumbnails from SQLite, and render selected images with red face bounding boxes overlaid. **[DER][USER]**
 - **FR-006** For each ingested image, the system shall correct EXIF-based orientation, extract EXIF/IPTC metadata, generate a JPEG thumbnail (≤ ~500px width), and persist these data. **[REQ][LEG]**
 - **FR-007** The system shall track import sessions recording folder_count and incrementally recording image_count as images are processed. **[REQ]**

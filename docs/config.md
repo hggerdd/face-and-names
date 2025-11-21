@@ -16,6 +16,8 @@ Proposed configuration layout and keys (human-readable files). Actual file forma
 - `models.path` (override to model assets)
 - `telemetry.offline` (bool, default true)
 - `detector.default` (e.g., "yolo")
+- `detector.crop_expand_pct` (float, e.g., 0.05)
+- `detector.face_target_size` (int pixels, e.g., 224)
 - `detector.yolo.weights_path` (path to `yolov11n-face.pt`)
 
 ## DB-Scoped Config (examples)

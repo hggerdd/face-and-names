@@ -17,7 +17,7 @@ This document summarizes the proposed architecture aligned to `docs/requirements
 - **Background workers**: in-process `JobManager` backed by a bounded pool; job metadata for progress (counts/histograms), cancellation tokens, and per-job checkpoints to enable resume (FR-009, FR-052/053). Priority lanes remain a planned enhancement.
 
 ## Data Flow (Key Operations)
-- **Ingest**: folder selection → session row → for each file in scope: normalize orientation, compute SHA-256 + pHash, skip existing → extract metadata → make thumbnail → detect faces → save bboxes/crops → optional inline prediction via `PredictionService` → update progress; failures recorded with retry/skip.
+- **Ingest**: folder selection → session row → for each file in scope: normalize orientation, compute SHA-256 + pHash, skip existing → extract metadata → make thumbnail → detect faces → save bboxes/crops (normalized to configurable square size) → optional inline prediction via `PredictionService` → update progress; failures recorded with retry/skip.
 - **Batch prediction**: load faces (all or unnamed) → run prediction in batches → update predicted_person_id/confidence → live histogram/stats → cancel leaves processed rows intact.
 - **Clustering**: load scoped faces → run selected algorithm → get cluster labels → post-process (split oversized clusters, renumber, noise handling) → persist cluster_id → stats emitted.
 - **Faces workspace**: query faces with filters (scope, confidence range, unnamed-only, differs-from-name, date range, groups) → virtualized grid of face tiles → interactions (toggle select, double-click accept/rename, right-click preview) → updates propagate to DB and UI.
