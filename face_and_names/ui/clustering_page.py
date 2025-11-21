@@ -125,6 +125,7 @@ class ClusteringPage(QWidget):
         self.status_label = QLabel("Select folders and run clustering.")
         self.run_btn = QPushButton("Run clustering")
         self.set_name_btn = QPushButton("Set name")
+        self.set_name_btn.setVisible(False)  # keep code path but hide per latest UX
         self.prev_btn = QPushButton("Previous cluster")
         self.next_btn = QPushButton("Next cluster")
         self.prev_btn.setEnabled(False)
@@ -141,6 +142,9 @@ class ClusteringPage(QWidget):
         self.faces_layout.setSpacing(12)
         self.faces_inner.setLayout(self.faces_layout)
         self.faces_area.setWidget(self.faces_inner)
+        self.names_list = QListWidget()
+        self.names_list.setFixedWidth(180)
+        self.names_list.itemDoubleClicked.connect(self._on_name_double_clicked)
         self.state = ClusterState(clusters=[])
         self.current_tiles: list[FaceTile] = []
 
@@ -178,7 +182,10 @@ class ClusteringPage(QWidget):
         layout.addWidget(self.folder_list)
         layout.addLayout(buttons)
         layout.addWidget(self.cluster_label)
-        layout.addWidget(self.faces_area, stretch=1)
+        faces_row = QHBoxLayout()
+        faces_row.addWidget(self.names_list)
+        faces_row.addWidget(self.faces_area, stretch=1)
+        layout.addLayout(faces_row)
         layout.addWidget(self.status_label)
         self.setLayout(layout)
 
@@ -186,6 +193,7 @@ class ClusteringPage(QWidget):
         self.set_name_btn.clicked.connect(self._batch_set_name)
         self.prev_btn.clicked.connect(self._prev_cluster)
         self.next_btn.clicked.connect(self._next_cluster)
+        self.names_list.itemDoubleClicked.connect(self._on_name_double_clicked)
 
     def _load_folders(self) -> None:
         self.folder_list.clear()
@@ -274,6 +282,7 @@ class ClusteringPage(QWidget):
         cluster = self.state.current
         if cluster is None:
             return
+        self._refresh_people_list()
         label = f"Cluster {self.state.index + 1}/{len(self.state.clusters)}"
         label += f" ({len(cluster.faces)} faces)"
         if cluster.is_noise:
@@ -390,5 +399,27 @@ class ClusteringPage(QWidget):
         pid = dlg.selected_person_id
         for tile in tiles:
             self.face_repo.update_person(tile.data.face_id, pid)
+        self.context.conn.commit()
+        self._show_cluster()
+
+    def _refresh_people_list(self) -> None:
+        people = sorted(self.people_service.list_people(), key=lambda p: p.get("display_name") or p.get("primary_name") or "")
+        self.names_list.clear()
+        for person in people:
+            name = person.get("display_name") or person.get("primary_name") or "(unnamed)"
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, person.get("id"))
+            self.names_list.addItem(item)
+
+    def _on_name_double_clicked(self, item: QListWidgetItem) -> None:
+        pid = item.data(Qt.ItemDataRole.UserRole)
+        if pid is None:
+            return
+        tiles = self._selected_tiles()
+        if not tiles:
+            QMessageBox.information(self, "No selection", "Select one or more faces to set a name.")
+            return
+        for tile in tiles:
+            self.face_repo.update_person(tile.data.face_id, int(pid))
         self.context.conn.commit()
         self._show_cluster()
