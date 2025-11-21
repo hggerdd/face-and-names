@@ -322,8 +322,7 @@ class FacesPage(QWidget):
         self.context.conn.commit()
 
     def _create_person(self, name: str) -> int:
-        pid = self.people_service.create(name)
-        return pid
+        return self.people_service.create_person(name)
 
     def _on_face_deleted(self, face_id: int) -> None:
         # Refresh current image view if visible
