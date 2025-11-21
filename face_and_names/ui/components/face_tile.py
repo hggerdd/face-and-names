@@ -40,6 +40,10 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QInputDialog,
+    QListWidget,
+    QPushButton,
+    QDialogButtonBox,
+    QDialog,
 )
 
 
@@ -220,22 +224,16 @@ class FaceTile(QWidget):
     def _open_person_menu(self) -> None:
         if not self.data:
             return
-        menu = QMenu(self)
-        persons = list(self.list_persons_cb())
-        for person in persons:
-            act = QAction(person["primary_name"], self)
-            act.triggered.connect(lambda _, pid=person["id"]: self._assign_person(pid))
-            menu.addAction(act)
-        if persons:
-            menu.addSeparator()
-        add_act = QAction("Add new person...", self)
-        add_act.triggered.connect(self._add_person)
-        menu.addAction(add_act)
-        if self.data.person_id is not None:
-            rename_act = QAction("Rename assigned person...", self)
-            rename_act.triggered.connect(self._rename_person)
-            menu.addAction(rename_act)
-        menu.exec(self.mapToGlobal(self.assigned_label.pos()))
+        dlg = PersonSelectDialog(
+            persons=list(self.list_persons_cb()),
+            create_person=self.create_person_cb,
+            rename_person=self.rename_person_cb,
+            parent=self,
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            selected_id = dlg.selected_person_id
+            if selected_id is not None:
+                self._assign_person(selected_id)
 
     def _assign_person(self, person_id: int) -> None:
         if not self.data:
@@ -288,3 +286,83 @@ class FaceTile(QWidget):
             self.open_original_cb(self.data.face_id)
         else:
             self.openOriginalRequested.emit(self.data.face_id)
+
+
+class PersonSelectDialog(QDialog):
+    """Dialog for selecting/adding/renaming persons by ID."""
+
+    def __init__(
+        self,
+        persons: list[dict],
+        create_person: Callable[[str], int],
+        rename_person: Callable[[int, str], None],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Assign person")
+        self.persons = persons
+        self.create_person_cb = create_person
+        self.rename_person_cb = rename_person
+        self.selected_person_id: int | None = None
+
+        self.list_widget = QListWidget()
+        self._refresh_list()
+
+        add_btn = QPushButton("Add")
+        add_btn.clicked.connect(self._add_person)
+        rename_btn = QPushButton("Rename")
+        rename_btn.clicked.connect(self._rename_person)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(add_btn)
+        btn_row.addWidget(rename_btn)
+        btn_row.addStretch(1)
+
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Choose an existing person:"))
+        layout.addWidget(self.list_widget)
+        layout.addLayout(btn_row)
+        layout.addWidget(buttons)
+        self.setLayout(layout)
+        self.resize(320, 360)
+
+    def _refresh_list(self) -> None:
+        self.list_widget.clear()
+        for person in self.persons:
+            self.list_widget.addItem(f"{person['primary_name']} (ID {person['id']})")
+
+    def _selected_index(self) -> int:
+        return self.list_widget.currentRow()
+
+    def _add_person(self) -> None:
+        name, ok = QInputDialog.getText(self, "Add person", "Name:", parent=self)
+        if not ok or not name.strip():
+            return
+        pid = self.create_person_cb(name.strip())
+        self.persons.append({"id": pid, "primary_name": name.strip()})
+        self._refresh_list()
+        self.list_widget.setCurrentRow(len(self.persons) - 1)
+
+    def _rename_person(self) -> None:
+        idx = self._selected_index()
+        if idx < 0 or idx >= len(self.persons):
+            return
+        current = self.persons[idx]["primary_name"]
+        new_name, ok = QInputDialog.getText(self, "Rename person", "New name:", text=current, parent=self)
+        if not ok or not new_name.strip():
+            return
+        pid = self.persons[idx]["id"]
+        self.rename_person_cb(pid, new_name.strip())
+        self.persons[idx]["primary_name"] = new_name.strip()
+        self._refresh_list()
+        self.list_widget.setCurrentRow(idx)
+
+    def _accept(self) -> None:
+        idx = self._selected_index()
+        if idx >= 0 and idx < len(self.persons):
+            self.selected_person_id = self.persons[idx]["id"]
+        self.accept()
