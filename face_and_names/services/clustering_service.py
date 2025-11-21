@@ -42,6 +42,7 @@ class ClusteringOptions:
     feature_source: str = "phash"  # phash, phash_raw, raw
     normalize_faces: bool = True
     gamma: float = 1.0
+    exclude_named: bool = False
 
 
 class ClusteringService:
@@ -105,6 +106,8 @@ class ClusteringService:
             placeholders = ", ".join("?" for _ in opts.folders)
             filters.append(f"i.sub_folder IN ({placeholders})")
             params.extend(opts.folders)
+        if opts.exclude_named:
+            filters.append("f.person_id IS NULL")
 
         where_clause = ""
         if filters:

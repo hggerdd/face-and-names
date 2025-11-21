@@ -64,6 +64,7 @@ class ClusteringWorker(QObject):
         db_path: Path,
         folders: Sequence[str],
         last_import_only: bool,
+        exclude_named: bool,
         algorithm: str,
         eps: float,
         min_samples: int,
@@ -73,6 +74,7 @@ class ClusteringWorker(QObject):
         self.db_path = db_path
         self.folders = folders
         self.last_import_only = last_import_only
+        self.exclude_named = exclude_named
         self.algorithm = algorithm
         self.eps = eps
         self.min_samples = min_samples
@@ -84,6 +86,7 @@ class ClusteringWorker(QObject):
             service = ClusteringService(conn)
             options = ClusteringOptions(
                 last_import_only=self.last_import_only,
+                exclude_named=self.exclude_named,
                 folders=self.folders,
                 eps=self.eps,
                 min_samples=self.min_samples,
@@ -108,6 +111,7 @@ class ClusteringPage(QWidget):
         self.folder_list = QListWidget()
         self.folder_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.last_import_checkbox = QCheckBox("Only last import session")
+        self.exclude_named_checkbox = QCheckBox("Exclude faces with names")
         self.algorithm_combo = QComboBox()
         self.algorithm_combo.addItems(["dbscan"])
         self.eps_spin = QDoubleSpinBox()
@@ -146,6 +150,7 @@ class ClusteringPage(QWidget):
         controls.addWidget(QLabel("Folders (multi-select):"))
         controls.addStretch(1)
         controls.addWidget(self.last_import_checkbox)
+        controls.addWidget(self.exclude_named_checkbox)
 
         algo_row = QHBoxLayout()
         algo_row.addWidget(QLabel("Algorithm:"))
@@ -193,6 +198,7 @@ class ClusteringPage(QWidget):
     def _run_clustering(self) -> None:
         folders = self._selected_folders()
         last_only = self.last_import_checkbox.isChecked()
+        exclude_named = self.exclude_named_checkbox.isChecked()
         algorithm = self.algorithm_combo.currentText()
         eps = float(self.eps_spin.value())
         min_samples = int(self.min_samples_spin.value())
@@ -208,6 +214,7 @@ class ClusteringPage(QWidget):
             self.context.db_path,
             folders=folders,
             last_import_only=last_only,
+            exclude_named=exclude_named,
             algorithm=algorithm,
             eps=eps,
             min_samples=min_samples,
