@@ -83,7 +83,7 @@ def load_artifacts(
     scaler = cls_data["scaler"]
 
     mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
-    person_ids = mapping.get("person_ids") or []
+    person_ids = [int(pid) for pid in (mapping.get("person_ids") or [])]
 
     cfg_dict = json.loads(embed_cfg_file.read_text(encoding="utf-8"))
     embed_config = EmbeddingConfig(**cfg_dict)
