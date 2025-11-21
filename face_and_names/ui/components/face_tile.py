@@ -224,8 +224,9 @@ class FaceTile(QWidget):
     def _open_person_menu(self) -> None:
         if not self.data:
             return
+        persons = list(self.list_persons_cb())
         dlg = PersonSelectDialog(
-            persons=list(self.list_persons_cb()),
+            persons=persons,
             create_person=self.create_person_cb,
             rename_person=self.rename_person_cb,
             parent=self,
@@ -257,7 +258,8 @@ class FaceTile(QWidget):
         if not ok or not name.strip():
             return
         try:
-            pid = self.create_person_cb(name.strip())
+            first, last = self._split_name(name.strip())
+            pid = self.create_person_cb(first, last, None)
             self.personCreated.emit(pid, name.strip())
             self._assign_person(pid)
         except Exception as exc:  # pragma: no cover
@@ -310,8 +312,8 @@ class PersonSelectDialog(QDialog):
     def __init__(
         self,
         persons: list[dict],
-        create_person: Callable[[str], int],
-        rename_person: Callable[[int, str], None],
+        create_person: Callable[[str, str, str | None], int],
+        rename_person: Callable[[int, str, str, str | None], None],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -358,8 +360,10 @@ class PersonSelectDialog(QDialog):
         name, ok = QInputDialog.getText(self, "Add person", "Name:")
         if not ok or not name.strip():
             return
-        pid = self.create_person_cb(name.strip())
-        self.persons.append({"id": pid, "primary_name": name.strip()})
+        first, last = self._split_name(name.strip())
+        pid = self.create_person_cb(first, last, None)
+        display = name.strip()
+        self.persons.append({"id": pid, "primary_name": display, "display_name": display})
         self._refresh_list()
         self.list_widget.setCurrentRow(len(self.persons) - 1)
 
@@ -367,13 +371,24 @@ class PersonSelectDialog(QDialog):
         idx = self._selected_index()
         if idx < 0 or idx >= len(self.persons):
             return
-        current = self.persons[idx]["primary_name"]
-        new_name, ok = QInputDialog.getText(self, "Rename person", "New name:", text=current)
-        if not ok or not new_name.strip():
+        current = self.persons[idx].get("display_name") or self.persons[idx]["primary_name"]
+        parts = current.split(" ", 1)
+        first_default = parts[0] if parts else ""
+        last_default = parts[1] if len(parts) > 1 else ""
+        first_name, ok1 = QInputDialog.getText(self, "Rename person", "First name:", text=first_default)
+        if not ok1:
+            return
+        last_name, ok2 = QInputDialog.getText(self, "Rename person", "Last name:", text=last_default)
+        if not ok2:
+            return
+        short_name, ok3 = QInputDialog.getText(self, "Rename person", "Short name (optional):", text=current)
+        if not ok3:
             return
         pid = self.persons[idx]["id"]
-        self.rename_person_cb(pid, new_name.strip())
-        self.persons[idx]["primary_name"] = new_name.strip()
+        self.rename_person_cb(pid, first_name.strip(), last_name.strip(), short_name.strip() or None)
+        display = short_name.strip() or f"{first_name.strip()} {last_name.strip()}".strip()
+        self.persons[idx]["primary_name"] = display
+        self.persons[idx]["display_name"] = display
         self._refresh_list()
         self.list_widget.setCurrentRow(idx)
 
@@ -382,3 +397,10 @@ class PersonSelectDialog(QDialog):
         if idx >= 0 and idx < len(self.persons):
             self.selected_person_id = self.persons[idx]["id"]
         self.accept()
+
+    @staticmethod
+    def _split_name(name: str) -> tuple[str, str]:
+        parts = name.split(" ", 1)
+        first = parts[0].strip() if parts else ""
+        last = parts[1].strip() if len(parts) > 1 else ""
+        return first, last
