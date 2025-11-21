@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QWidget,
     QMessageBox,
     QCheckBox,
+    QTableWidget,
+    QTableWidgetItem,
 )
 
 from face_and_names.app_context import AppContext
@@ -26,6 +28,8 @@ from face_and_names.training.trainer import TrainingConfig, train_model_from_db
 from face_and_names.services.prediction_service import PredictionService
 from face_and_names.services.prediction_apply import apply_predictions
 from face_and_names.models.db import connect
+from face_and_names.services.people_service import PeopleService
+from face_and_names.models.repositories import FaceRepository
 
 
 class TrainingWorker(QThread):
@@ -116,6 +120,9 @@ class PredictionTrainingPage(QWidget):
         self.apply_status = QLabel("Prediction idle")
         self.apply_progress = QProgressBar()
         self.apply_progress.setRange(0, 100)
+        self.cm_label = QLabel("Confusion matrix (eligible IDs >50 imgs):")
+        self.cm_table = QTableWidget(0, 0)
+        self.cm_table.setVisible(False)
 
         self._build_ui()
 
@@ -141,6 +148,8 @@ class PredictionTrainingPage(QWidget):
         layout.addLayout(apply_row)
         layout.addWidget(self.apply_status)
         layout.addWidget(self.apply_progress)
+        layout.addWidget(self.cm_label)
+        layout.addWidget(self.cm_table)
 
         layout.addStretch(1)
         self.setLayout(layout)
@@ -149,6 +158,7 @@ class PredictionTrainingPage(QWidget):
         self.cancel_btn.clicked.connect(self._cancel_training)
         self.apply_btn.clicked.connect(self._start_apply)
         self.apply_cancel_btn.clicked.connect(self._cancel_apply)
+        self._render_confusion({})
 
     def _start_training(self) -> None:
         if self.worker and self.worker.isRunning():
@@ -179,6 +189,7 @@ class PredictionTrainingPage(QWidget):
         self.progress_bar.setValue(100)
         self.start_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
+        self._render_confusion(metrics)
 
     def _on_failed(self, message: str) -> None:
         QMessageBox.critical(self, "Training failed", message)
@@ -232,4 +243,47 @@ class PredictionTrainingPage(QWidget):
         self.apply_status.setText("Failed")
         self.apply_btn.setEnabled(True)
         self.apply_cancel_btn.setEnabled(False)
+        self._render_confusion({})
+
+    def _render_confusion(self, metrics: dict) -> None:
+        cm = metrics.get("confusion_matrix") if isinstance(metrics, dict) else None
+        labels = metrics.get("confusion_labels") if isinstance(metrics, dict) else None
+        if not cm or not labels:
+            self.cm_table.setVisible(False)
+            return
+        # Map person_id to display name
+        name_map = {}
+        try:
+            service = getattr(self.context, "people_service", None) or PeopleService(self.context.conn)
+            for p in service.list_people():
+                name_map[p["id"]] = p.get("display_name") or p.get("primary_name")
+        except Exception:
+            pass
+        horiz = [f"{pid} ({name_map.get(pid, '')})" for pid in labels]
+        vert = horiz
+        self.cm_table.setRowCount(len(labels))
+        self.cm_table.setColumnCount(len(labels))
+        self.cm_table.setHorizontalHeaderLabels(horiz)
+        self.cm_table.setVerticalHeaderLabels(vert)
+        for r_idx, row in enumerate(cm):
+            for c_idx, val in enumerate(row):
+                item = QTableWidgetItem(str(val))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.cm_table.setItem(r_idx, c_idx, item)
+        # Apply color scale (white to dark blue)
+        flat = [v for row in cm for v in row]
+        vmax = max(flat) if flat else 0
+        vmin = min(flat) if flat else 0
+        span = max(vmax - vmin, 1)
+        for r_idx, row in enumerate(cm):
+            for c_idx, val in enumerate(row):
+                norm = (val - vmin) / span
+                # simple blue ramp: white -> dark blue
+                b = int(255 * (0.3 + 0.7 * norm))
+                g = int(255 * (0.3 + 0.7 * norm))
+                r = 255 - int(200 * norm)
+                color = QColor(r, g, b)
+                self.cm_table.item(r_idx, c_idx).setBackground(color)
+        self.cm_table.resizeColumnsToContents()
+        self.cm_table.setVisible(True)
 from face_and_names.services.prediction_apply import apply_predictions
