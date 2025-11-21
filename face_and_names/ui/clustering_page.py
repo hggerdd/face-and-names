@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QDialog,
     QMessageBox,
+    QGridLayout,
 )
 
 from face_and_names.app_context import AppContext
