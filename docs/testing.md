@@ -1,6 +1,6 @@
-# Face-and-Names v2 – Testing Strategy (Pre-Code)
+# Face-and-Names v2 — Testing Strategy (Pre-Code)
 
-Requirement coverage: align with `docs/requirements.md`. Tests are mapped by ID and type. This is a planning document; no code.
+Requirement coverage aligns with `docs/requirements.md`. Tests are mapped by ID and type. This is a planning document; no code.
 
 ## Test Types
 - **Functional**: per feature/flow (ingest, detection/prediction, clustering, faces workspace interactions, people/groups, export/import, diagnostics).
@@ -21,11 +21,14 @@ Requirement coverage: align with `docs/requirements.md`. Tests are mapped by ID 
 - Data Insights: FR-043/044 — stats correctness on representative DB.
 
 ## Performance Benchmarks (draft targets)
-- Startup ≤2s with representative DB (NFR-001).
-- Ingest: ≥3–5 img/s without detection; ≥1–2 img/s with detection+inline prediction on modest CPU; record measured throughput (OI-002).
-- Clustering: 10k faces <2 min; report noise count and distribution.
-- Batch prediction: ≥10 faces/s CPU, ≥30 faces/s GPU; live histogram updates.
-- UI: tab changes do not trigger heavy work; virtualized grids keep scroll smooth at large counts.
+| Area | Target | Test IDs (examples) |
+| --- | --- | --- |
+| Startup | ≤2s with representative DB (NFR-001) | PERF-startup-001 |
+| Ingest (no detection) | ~3–5 img/s; record throughput (OI-002) | PERF-ingest-CPU-001 |
+| Ingest (detection+inline prediction) | ~1–2 img/s on modest CPU; document GPU uplift | PERF-ingest-det-001 |
+| Clustering | 10k faces <2 min; noise/cluster histograms recorded | PERF-cluster-001 |
+| Batch prediction | ~10 faces/s CPU, ~30 faces/s GPU; live histogram updates | PERF-predict-001 |
+| UI responsiveness | Tab change <100ms; virtualized grids smooth at large counts | PERF-ui-001 |
 
 ## Resilience Cases
 - Cancel mid-ingest/clustering/prediction → partial progress persists; resume continues remaining items (FR-052/053).
@@ -33,10 +36,18 @@ Requirement coverage: align with `docs/requirements.md`. Tests are mapped by ID 
 - Model missing/unavailable → app remains usable with clear state (FR-063).
 - Thumbnail/crop rebuild tools restore missing cache entries.
 
+## Diagnostics & Recovery Coverage
+| Requirement IDs | Checks | Test Types |
+| --- | --- | --- |
+| FR-048..054, FR-057 | Model presence/versions/devices, DB integrity, cache stats, self-test pass/fail, missing asset handling | automated diagnostics tests + manual UI smoke |
+| FR-051..053 | Progress + cancel/resume semantics for ingest/clustering/prediction, retry/skip flows | automated resilience tests |
+| FR-050, FR-058/059 | Duplicate/near-duplicate review and repair tools | automated + manual workflow tests |
+
 ## Accessibility Checks
-- Keyboard shortcuts for accept/rename/delete/select; focus order predictable.
-- Screen-reader labels on tiles, buttons, sliders; tooltips descriptive (NFR-006/013).
-- Contrast ratios meeting WCAG 2.1 AA for text/icons.
+- Keyboard shortcuts for accept/rename/delete/select; focus order predictable. (A11Y-nav-001)
+- Screen-reader labels on tiles, buttons, sliders; tooltips descriptive (NFR-006/013). (A11Y-sr-001)
+- Contrast ratios meeting WCAG 2.1 AA for text/icons. (A11Y-contrast-001)
+- Face tile accessibility: announce current/predicted names, selection state, delete/preview controls. (A11Y-tile-001)
 
 ## Security/Privacy Checks
 - Offline default verified; no network calls unless opt-in.
