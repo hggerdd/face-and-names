@@ -80,7 +80,11 @@ class MainWindow(QMainWindow):
             placeholder="Prepare and train prediction models (coming soon)",
             widget=PredictionTrainingPage(self.context),
         )
-        self._add_page("Prediction Review", "Review and accept model predictions")
+        self._add_page(
+            "Prediction Review",
+            placeholder="Review and accept model predictions",
+            widget=PredictionReviewPage(self.context),
+        )
         self._add_page(
             "People & Groups",
             placeholder="Manage people records, aliases, groups",
