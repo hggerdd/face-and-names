@@ -33,7 +33,6 @@ dev = [
 
 [tool.uv]
 index-url = "https://pypi.org/simple"
-resolution = "lowest-direct"
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
