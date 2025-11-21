@@ -49,6 +49,7 @@ class IngestWorker(QObject):
         recursive: bool,
         cancel_event: threading.Event | None = None,
         checkpoint: dict | None = None,
+        crop_expand_pct: float = 0.05,
     ) -> None:
         super().__init__()
         self.db_root = db_root
@@ -56,10 +57,11 @@ class IngestWorker(QObject):
         self.recursive = recursive
         self.cancel_event = cancel_event
         self.checkpoint = checkpoint
+        self.crop_expand_pct = crop_expand_pct
 
     def run(self) -> None:
         conn = initialize_database(self.db_root / "faces.db")
-        service = IngestService(db_root=self.db_root, conn=conn)
+        service = IngestService(db_root=self.db_root, conn=conn, crop_expand_pct=self.crop_expand_pct)
         progress = service.start_session(
             self.folders,
             options=IngestOptions(recursive=self.recursive),
@@ -185,6 +187,8 @@ class ImportPage(QWidget):
         recursive = self.recursive_checkbox.isChecked()
 
         self.cancel_event = threading.Event()
+        detector_cfg = self.context.config.get("detector", {}) if isinstance(self.context.config, dict) else {}
+        crop_expand_pct = float(detector_cfg.get("crop_expand_pct", 0.05))
         self._thread = QThread(self)
         self._worker = IngestWorker(
             db_root=self.db_root,
@@ -192,6 +196,7 @@ class ImportPage(QWidget):
             recursive=recursive,
             cancel_event=self.cancel_event,
             checkpoint=use_checkpoint,
+            crop_expand_pct=crop_expand_pct,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

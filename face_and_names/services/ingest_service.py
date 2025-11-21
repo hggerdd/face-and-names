@@ -62,7 +62,7 @@ class IngestProgress:
 class IngestService:
     """Ingest images into the database, without detection/prediction."""
 
-    def __init__(self, db_root: Path, conn) -> None:
+    def __init__(self, db_root: Path, conn, crop_expand_pct: float = 0.05) -> None:
         self.db_root = db_root
         self.conn = conn
         self.sessions = ImportSessionRepository(conn)
@@ -70,6 +70,7 @@ class IngestService:
         self.metadata = MetadataRepository(conn)
         self.faces = FaceRepository(conn)
         self.processing_workers = max(2, min(8, (os.cpu_count() or 4)))
+        self.crop_expand_pct = crop_expand_pct
 
     def start_session(
         self,
@@ -218,7 +219,7 @@ class IngestService:
 
         existing_id = self.images.get_by_content_hash(content_hash)
         if existing_id is not None:
-            return False, None, None
+            return False, None, None, 0
 
         relative_path = image_path.resolve().relative_to(self.db_root.resolve())
         sub_folder = str(relative_path.parent).replace("\\", "/")
@@ -246,10 +247,12 @@ class IngestService:
         face_preview: list[bytes] | None = None
         faces_added = 0
         if detector is not None:
-        faces = self._detect_faces(detector, normalized_bytes, width, height)
-        face_preview, stored_faces = self._persist_faces(faces, image_id, import_id, normalized_bytes, image_path)
-        faces_added = stored_faces
-        has_faces = 1 if faces_added else 0
+            faces = self._detect_faces(detector, normalized_bytes, width, height)
+            face_preview, stored_faces = self._persist_faces(
+                faces, image_id, import_id, normalized_bytes, image_path
+            )
+            faces_added = stored_faces
+            has_faces = 1 if faces_added else 0
 
         # Update has_faces once detection is known
         self.conn.execute("UPDATE image SET has_faces = ? WHERE id = ?", (has_faces, image_id))
@@ -345,6 +348,21 @@ class IngestService:
             LOGGER.error("Detection failed: %s", exc)
             return []
 
+    def _expand_bbox(
+        self, bbox_abs: Sequence[float], img_w: float, img_h: float, expand_pct: float
+    ) -> tuple[float, float, float, float]:
+        """Expand bbox by pct on all sides, clamped to image bounds."""
+        x, y, w, h = bbox_abs
+        cx = x + w / 2.0
+        cy = y + h / 2.0
+        new_w = w * (1 + 2 * expand_pct)
+        new_h = h * (1 + 2 * expand_pct)
+        new_x1 = max(0.0, cx - new_w / 2.0)
+        new_y1 = max(0.0, cy - new_h / 2.0)
+        new_x2 = min(img_w, cx + new_w / 2.0)
+        new_y2 = min(img_h, cy + new_h / 2.0)
+        return new_x1, new_y1, max(0.0, new_x2 - new_x1), max(0.0, new_y2 - new_y1)
+
     def _persist_faces(
         self,
         detections: list[FaceDetection],
@@ -359,11 +377,12 @@ class IngestService:
             return preview, stored
         with Image.open(BytesIO(normalized_bytes)) as image:
             image.load()
+            img_w, img_h = image.size
             for idx, det in enumerate(detections):
                 if len(det.bbox_abs) != 4 or len(det.bbox_rel) != 4:
                     LOGGER.warning("Skipping invalid detection bbox for %s: %s", image_path, det.bbox_abs)
                     continue
-                x, y, w, h = det.bbox_abs
+                x, y, w, h = self._expand_bbox(det.bbox_abs, img_w, img_h, self.crop_expand_pct)
                 crop = image.crop((x, y, x + w, y + h))
                 buf = BytesIO()
                 crop.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
