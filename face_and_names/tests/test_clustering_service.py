@@ -167,3 +167,16 @@ def test_cluster_with_normalized_phash_handles_brightness(tmp_path: Path) -> Non
     clusters = [c for c in results if not c.is_noise]
     # Expect the two shades to be grouped together when normalized
     assert clusters and len(clusters[0].faces) >= 2
+
+
+def test_cluster_raw_downscaled(tmp_path: Path) -> None:
+    conn = initialize_database(tmp_path / "faces.db")
+    _insert_import_and_faces(conn, tmp_path)
+
+    service = ClusteringService(conn)
+    results = service.cluster_faces(
+        ClusteringOptions(eps=0.2, min_samples=1, feature_source="raw", normalize_faces=True)
+    )
+
+    clusters = [c for c in results if not c.is_noise]
+    assert clusters and len(clusters[0].faces) >= 2

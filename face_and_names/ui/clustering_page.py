@@ -115,7 +115,7 @@ class ClusteringPage(QWidget):
         self.next_btn.setEnabled(False)
         self.cluster_label = QLabel("No clusters loaded")
         self.feature_source_combo = QComboBox()
-        self.feature_source_combo.addItems(["pHash (normalized)", "pHash (raw)"])
+        self.feature_source_combo.addItems(["pHash (normalized)", "pHash (raw)", "Raw (downscaled)"])
         self.faces_list = QListWidget()
         self.faces_list.setViewMode(QListWidget.ViewMode.IconMode)
         self.faces_list.setIconSize(QPixmap(96, 96).size())
@@ -182,7 +182,8 @@ class ClusteringPage(QWidget):
         algorithm = self.algorithm_combo.currentText()
         eps = float(self.eps_spin.value())
         min_samples = int(self.min_samples_spin.value())
-        feature_source = "phash" if self.feature_source_combo.currentIndex() == 0 else "phash_raw"
+        idx = self.feature_source_combo.currentIndex()
+        feature_source = {0: "phash", 1: "phash_raw", 2: "raw"}.get(idx, "phash")
         self.status_label.setText("Clustering…")
         self.run_btn.setEnabled(False)
         self.prev_btn.setEnabled(False)

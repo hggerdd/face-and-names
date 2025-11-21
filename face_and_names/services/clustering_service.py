@@ -37,7 +37,7 @@ class ClusteringOptions:
     min_samples: int = 1
     last_import_only: bool = False
     folders: Sequence[str] | None = None
-    feature_source: str = "phash"  # phash or phash_raw
+    feature_source: str = "phash"  # phash, phash_raw, raw
     normalize_faces: bool = True
     gamma: float = 1.0
 
@@ -134,6 +134,8 @@ class ClusteringService:
                 ph = imagehash.phash(self._preprocess_for_hash(img, opts))
             elif opts.feature_source == "phash_raw":
                 ph = imagehash.phash(img.convert("RGB"))
+            elif opts.feature_source == "raw":
+                return self._raw_vector(img, opts)
             else:
                 raise ValueError(f"Unsupported feature_source: {opts.feature_source}")
         # Flatten to 64 bits and cast to float for sklearn
@@ -151,6 +153,18 @@ class ClusteringService:
         if opts.gamma and opts.gamma != 1.0:
             norm = ImageOps.gamma(norm, opts.gamma)
         return norm
+
+    def _raw_vector(self, img: Image.Image, opts: ClusteringOptions) -> np.ndarray:
+        """Downscale raw face image to fixed size and flatten."""
+        target = 32
+        proc = img.convert("RGB")
+        if opts.normalize_faces:
+            proc = ImageOps.autocontrast(proc)
+            if opts.gamma and opts.gamma != 1.0:
+                proc = ImageOps.gamma(proc, opts.gamma)
+        proc = proc.resize((target, target), Image.Resampling.BILINEAR)
+        arr = np.asarray(proc, dtype=np.float32) / 255.0
+        return arr.reshape(-1)
 
     def _run_dbscan(self, X: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
         if len(X) == 1:
