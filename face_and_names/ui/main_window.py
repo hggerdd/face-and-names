@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 from face_and_names.app_context import AppContext
 from face_and_names.ui.import_page import ImportPage
 from face_and_names.ui.faces_page import FacesPage
+from face_and_names.ui.clustering_page import ClusteringPage
 
 
 class MainWindow(QMainWindow):
@@ -65,7 +66,11 @@ class MainWindow(QMainWindow):
             placeholder="Ingest photos from DB Root with progress/resume",
             widget=ImportPage(self.context, on_context_changed=self._replace_context),
         )
-        self._add_page("Clustering", "Configure and run clustering jobs")
+        self._add_page(
+            "Clustering",
+            placeholder="Configure and run clustering jobs",
+            widget=ClusteringPage(self.context),
+        )
         self._add_page("Prediction Review", "Review and accept model predictions")
         self._add_page("People & Groups", "Manage people records, aliases, groups")
         self._add_page("Diagnostics", "Model/DB health, self-test, repair tools")

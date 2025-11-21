@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -84,6 +86,12 @@ class FacesPage(QWidget):
         self.load_more_btn = QPushButton("Load more")
         self.load_more_btn.clicked.connect(self._load_more)
         self.load_more_btn.setEnabled(False)
+        self.face_table = QTableWidget(0, 3)
+        self.face_table.setHorizontalHeaderLabels(["Person", "Predicted", "Confidence"])
+        self.face_table.horizontalHeader().setStretchLastSection(True)
+        self.face_table.verticalHeader().setVisible(False)
+        self.face_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.face_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.page_size = 200
         self.current_folder: str = ""
         self.current_offset = 0
@@ -104,6 +112,8 @@ class FacesPage(QWidget):
 
         root_layout = QVBoxLayout()
         root_layout.addWidget(splitter)
+        root_layout.addWidget(QLabel("Faces in image:"))
+        root_layout.addWidget(self.face_table)
         root_layout.addWidget(self.status)
         self.setLayout(root_layout)
 
@@ -202,6 +212,7 @@ class FacesPage(QWidget):
             return
         boxes = self._load_face_boxes(rec.image_id)
         self.preview.show_image(pix, boxes)
+        self._load_face_table(rec.image_id)
         self.status.setText(f"{rec.filename}: {len(boxes)} faces")
 
     def _load_face_boxes(self, image_id: int) -> List[tuple[float, float, float, float]]:
@@ -214,3 +225,25 @@ class FacesPage(QWidget):
             (image_id,),
         ).fetchall()
         return [(float(r[0]), float(r[1]), float(r[2]), float(r[3])) for r in rows]
+
+    def _load_face_table(self, image_id: int) -> None:
+        rows = self.context.conn.execute(
+            """
+            SELECT
+                COALESCE(p.primary_name, '') AS person_name,
+                COALESCE(pp.primary_name, '') AS predicted_name,
+                COALESCE(f.prediction_confidence, 0)
+            FROM face f
+            LEFT JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            WHERE f.image_id = ?
+            ORDER BY f.id
+            """,
+            (image_id,),
+        ).fetchall()
+        self.face_table.setRowCount(len(rows))
+        for idx, row in enumerate(rows):
+            self.face_table.setItem(idx, 0, QTableWidgetItem(row[0]))
+            self.face_table.setItem(idx, 1, QTableWidgetItem(row[1]))
+            conf = "" if row[2] is None else f"{float(row[2]):.2f}"
+            self.face_table.setItem(idx, 2, QTableWidgetItem(conf))

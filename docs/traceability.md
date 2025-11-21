@@ -15,7 +15,7 @@ Purpose: ensure every requirement in `docs/requirements.md` is mapped to design 
 | FR-001..009 | plan.md, architecture.md, ingest specs | services/ingest_service.py, ui/import_page.py | tests/test_ingest_service.py | cancel/resume + progress implemented; inline prediction pending |
 | FR-010..013 | detector_adapter.md, model_runner.md, architecture.md | services/detector_adapter.py, prediction_service.py | tests/test_detector_adapter.py | partial (detection implemented, prediction stub) |
 | FR-014..017, FR-064..067 | ui.md, ui_wireframes.md | ui/faces_page.py, faces workspace controller, ui/components/face_tile.py | tests (TBD) | paged folder view + face tile skeleton; full workspace pending |
-| FR-018..022 | plan.md, architecture.md | services/clustering_service.py | tests (TBD) | not started |
+| FR-018..022 | plan.md, architecture.md | services/clustering_service.py, ui/clustering_page.py | tests/test_clustering_service.py | basic clustering DBSCAN + UI navigation implemented; enrichment pending |
 | FR-030..033, FR-045..047, FR-068..070 | plan.md | services/people_service.py | tests/test_people_service.py | service hooks + merge/alias tests; UI pending |
 | FR-048..054, FR-057 | diagnostics design | services/diagnostics_service.py | tests (TBD) | not started |
 | FR-055..057, FR-058/059 | plan.md, hash_scheme.md | export_import_service.py, models/schema.sql | tests (TBD) | not started |
