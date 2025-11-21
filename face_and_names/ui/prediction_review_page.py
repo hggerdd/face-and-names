@@ -216,7 +216,7 @@ class PredictionReviewPage(QWidget):
             LEFT JOIN person p ON p.id = f.person_id
             LEFT JOIN person pp ON pp.id = f.predicted_person_id
             WHERE {where}
-            ORDER BY f.id
+            ORDER BY COALESCE(f.prediction_confidence, 0) DESC, f.id
             """,
             params,
         ).fetchall()
