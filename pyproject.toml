@@ -11,7 +11,7 @@ authors = [
 dependencies = [
   "pyqt6==6.6.1",
   "pyqt6-qt6==6.6.1",
-  "pillow==10.4.0",
+  "pillow==10.2.0",
   "imagehash==4.3.2",
   "exifread==3.0.0",
   "scikit-learn==1.5.2",
