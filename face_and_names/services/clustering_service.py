@@ -54,8 +54,9 @@ class ClusteringService:
         vectors = [self._phash_vector(crop) for _, crop, *_ in faces]
         X = np.stack(vectors)
 
-        if opts.algorithm.lower() == "dbscan":
-            labels = self._run_dbscan(X, eps=opts.eps, min_samples=opts.min_samples)
+        algo = opts.algorithm.lower()
+        if algo == "dbscan":
+            labels = self._run_dbscan(X, eps=opts.eps, min_samples=int(opts.min_samples))
         else:
             raise ValueError(f"Unsupported algorithm: {opts.algorithm}")
 

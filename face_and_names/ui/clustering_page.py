@@ -13,6 +13,8 @@ from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QIcon
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -48,11 +50,22 @@ class ClusterState:
 class ClusteringWorker(QObject):
     finished = pyqtSignal(object, object)  # result, error
 
-    def __init__(self, db_path: Path, folders: Sequence[str], last_import_only: bool) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        folders: Sequence[str],
+        last_import_only: bool,
+        algorithm: str,
+        eps: float,
+        min_samples: int,
+    ) -> None:
         super().__init__()
         self.db_path = db_path
         self.folders = folders
         self.last_import_only = last_import_only
+        self.algorithm = algorithm
+        self.eps = eps
+        self.min_samples = min_samples
 
     def run(self) -> None:
         try:
@@ -61,8 +74,9 @@ class ClusteringWorker(QObject):
             options = ClusteringOptions(
                 last_import_only=self.last_import_only,
                 folders=self.folders,
-                eps=0.15,
-                min_samples=1,
+                eps=self.eps,
+                min_samples=self.min_samples,
+                algorithm=self.algorithm,
             )
             result = service.cluster_faces(options)
             conn.close()
@@ -80,6 +94,16 @@ class ClusteringPage(QWidget):
         self.folder_list = QListWidget()
         self.folder_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.last_import_checkbox = QCheckBox("Only last import session")
+        self.algorithm_combo = QComboBox()
+        self.algorithm_combo.addItems(["dbscan"])
+        self.eps_spin = QDoubleSpinBox()
+        self.eps_spin.setRange(0.01, 1.0)
+        self.eps_spin.setSingleStep(0.01)
+        self.eps_spin.setValue(0.15)
+        self.min_samples_spin = QDoubleSpinBox()
+        self.min_samples_spin.setRange(1, 100)
+        self.min_samples_spin.setSingleStep(1)
+        self.min_samples_spin.setValue(1)
         self.status_label = QLabel("Select folders and run clustering.")
         self.run_btn = QPushButton("Run clustering")
         self.prev_btn = QPushButton("Previous cluster")
@@ -104,6 +128,15 @@ class ClusteringPage(QWidget):
         controls.addStretch(1)
         controls.addWidget(self.last_import_checkbox)
 
+        algo_row = QHBoxLayout()
+        algo_row.addWidget(QLabel("Algorithm:"))
+        algo_row.addWidget(self.algorithm_combo)
+        algo_row.addWidget(QLabel("eps:"))
+        algo_row.addWidget(self.eps_spin)
+        algo_row.addWidget(QLabel("min_samples:"))
+        algo_row.addWidget(self.min_samples_spin)
+        algo_row.addStretch(1)
+
         buttons = QHBoxLayout()
         buttons.addWidget(self.run_btn)
         buttons.addStretch(1)
@@ -112,6 +145,7 @@ class ClusteringPage(QWidget):
 
         layout = QVBoxLayout()
         layout.addLayout(controls)
+        layout.addLayout(algo_row)
         layout.addWidget(self.folder_list)
         layout.addLayout(buttons)
         layout.addWidget(self.cluster_label)
@@ -138,13 +172,23 @@ class ClusteringPage(QWidget):
     def _run_clustering(self) -> None:
         folders = self._selected_folders()
         last_only = self.last_import_checkbox.isChecked()
+        algorithm = self.algorithm_combo.currentText()
+        eps = float(self.eps_spin.value())
+        min_samples = int(self.min_samples_spin.value())
         self.status_label.setText("Clustering…")
         self.run_btn.setEnabled(False)
         self.prev_btn.setEnabled(False)
         self.next_btn.setEnabled(False)
 
         self._thread = QThread(self)
-        self._worker = ClusteringWorker(self.context.db_path, folders=folders, last_import_only=last_only)
+        self._worker = ClusteringWorker(
+            self.context.db_path,
+            folders=folders,
+            last_import_only=last_only,
+            algorithm=algorithm,
+            eps=eps,
+            min_samples=min_samples,
+        )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._on_cluster_finished)
