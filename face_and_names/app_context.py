@@ -19,6 +19,7 @@ from face_and_names.config.loader import load_config
 from face_and_names.logging.setup import setup_logging
 from face_and_names.models.db import initialize_database
 from face_and_names.services.workers import JobManager
+from face_and_names.utils.event_bus import EventBus
 
 ENV_CONFIG_DIR = "FACE_AND_NAMES_CONFIG_DIR"
 ENV_DB_PATH = "FACE_AND_NAMES_DB_PATH"
@@ -33,6 +34,7 @@ class AppContext:
     conn: sqlite3.Connection
     config_path: Path
     job_manager: JobManager
+    events: EventBus
 
 
 def default_config_dir() -> Path:
@@ -79,9 +81,15 @@ def initialize_app(
 
     worker_cfg = config.get("workers", {}) if isinstance(config, dict) else {}
     job_manager = JobManager(max_workers=int(worker_cfg.get("cpu_max", 2)))
+    events = EventBus()
 
     return AppContext(
-        config=config, db_path=resolved_db_path, conn=conn, config_path=config_path, job_manager=job_manager
+        config=config,
+        db_path=resolved_db_path,
+        conn=conn,
+        config_path=config_path,
+        job_manager=job_manager,
+        events=events,
     )
 
 

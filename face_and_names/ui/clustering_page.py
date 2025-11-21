@@ -212,6 +212,10 @@ class ClusteringPage(QWidget):
         self.prev_btn.setEnabled(True)
         self.next_btn.setEnabled(True)
         self._show_cluster()
+        try:
+            self.context.events.emit("clustering_completed")
+        except Exception:
+            pass
 
     def _prev_cluster(self) -> None:
         if not self.state.clusters:

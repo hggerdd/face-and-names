@@ -238,6 +238,10 @@ class ImportPage(QWidget):
             self._last_checkpoint = progress.checkpoint
         else:
             self._last_checkpoint = None
+        try:
+            self.context.events.emit("ingest_completed")
+        except Exception:
+            pass
 
     def _on_progress(self, progress) -> None:
         self.status_label.setText(
