@@ -180,6 +180,9 @@ class PredictionReviewPage(QWidget):
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
             )
+            tile.personAssigned.connect(lambda fid, pid, self=self: self._after_change())
+            tile.personCreated.connect(lambda pid, name, self=self: self._after_change())
+            tile.deleteCompleted.connect(lambda fid, self=self: self._after_change())
             row_idx, col_idx = divmod(idx, max_cols)
             self.faces_layout.addWidget(tile, row_idx, col_idx, alignment=Qt.AlignmentFlag.AlignTop)
             self.current_tiles.append(tile)
@@ -229,11 +232,16 @@ class PredictionReviewPage(QWidget):
         self.face_repo.delete(face_id)
         self.context.conn.commit()
         self._load_faces()
+        self._load_people()
 
     def _assign_person(self, face_id: int, person_id: int | None) -> None:
         self.face_repo.update_person(face_id, person_id)
         self.context.conn.commit()
         self._load_faces()
+        self._load_people()
+    def _after_change(self) -> None:
+        self._load_faces()
+        self._load_people()
 
     def _open_original_image(self, face_id: int) -> None:
         row = self.face_repo.get_face_with_image(face_id)
