@@ -58,6 +58,7 @@ class ClusteringWorker(QObject):
         algorithm: str,
         eps: float,
         min_samples: int,
+        feature_source: str,
     ) -> None:
         super().__init__()
         self.db_path = db_path
@@ -66,6 +67,7 @@ class ClusteringWorker(QObject):
         self.algorithm = algorithm
         self.eps = eps
         self.min_samples = min_samples
+        self.feature_source = feature_source
 
     def run(self) -> None:
         try:
@@ -77,6 +79,7 @@ class ClusteringWorker(QObject):
                 eps=self.eps,
                 min_samples=self.min_samples,
                 algorithm=self.algorithm,
+                feature_source=self.feature_source,
             )
             result = service.cluster_faces(options)
             conn.close()
@@ -111,6 +114,8 @@ class ClusteringPage(QWidget):
         self.prev_btn.setEnabled(False)
         self.next_btn.setEnabled(False)
         self.cluster_label = QLabel("No clusters loaded")
+        self.feature_source_combo = QComboBox()
+        self.feature_source_combo.addItems(["pHash (normalized)", "pHash (raw)"])
         self.faces_list = QListWidget()
         self.faces_list.setViewMode(QListWidget.ViewMode.IconMode)
         self.faces_list.setIconSize(QPixmap(96, 96).size())
@@ -135,6 +140,8 @@ class ClusteringPage(QWidget):
         algo_row.addWidget(self.eps_spin)
         algo_row.addWidget(QLabel("min_samples:"))
         algo_row.addWidget(self.min_samples_spin)
+        algo_row.addWidget(QLabel("Feature:"))
+        algo_row.addWidget(self.feature_source_combo)
         algo_row.addStretch(1)
 
         buttons = QHBoxLayout()
@@ -175,6 +182,7 @@ class ClusteringPage(QWidget):
         algorithm = self.algorithm_combo.currentText()
         eps = float(self.eps_spin.value())
         min_samples = int(self.min_samples_spin.value())
+        feature_source = "phash" if self.feature_source_combo.currentIndex() == 0 else "phash_raw"
         self.status_label.setText("Clustering…")
         self.run_btn.setEnabled(False)
         self.prev_btn.setEnabled(False)
@@ -188,6 +196,7 @@ class ClusteringPage(QWidget):
             algorithm=algorithm,
             eps=eps,
             min_samples=min_samples,
+            feature_source=feature_source,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

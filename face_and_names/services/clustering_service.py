@@ -37,6 +37,9 @@ class ClusteringOptions:
     min_samples: int = 1
     last_import_only: bool = False
     folders: Sequence[str] | None = None
+    feature_source: str = "phash"  # phash or phash_raw
+    normalize_faces: bool = True
+    gamma: float = 1.0
 
 
 class ClusteringService:
@@ -51,7 +54,7 @@ class ClusteringService:
         if not faces:
             return []
 
-        vectors = [self._phash_vector(crop) for _, crop, *_ in faces]
+        vectors = [self._feature_vector(crop, opts) for _, crop, *_ in faces]
         X = np.stack(vectors)
 
         algo = opts.algorithm.lower()
@@ -124,12 +127,30 @@ class ClusteringService:
                 continue
             yield (int(row[0]), bytes(row[1]), row[2], row[3], row[4])
 
-    def _phash_vector(self, crop_bytes: bytes) -> np.ndarray:
+    def _feature_vector(self, crop_bytes: bytes, opts: ClusteringOptions) -> np.ndarray:
         with Image.open(BytesIO(crop_bytes)) as img:
             img.load()
-            ph = imagehash.phash(img.convert("RGB"))
+            if opts.feature_source == "phash":
+                ph = imagehash.phash(self._preprocess_for_hash(img, opts))
+            elif opts.feature_source == "phash_raw":
+                ph = imagehash.phash(img.convert("RGB"))
+            else:
+                raise ValueError(f"Unsupported feature_source: {opts.feature_source}")
         # Flatten to 64 bits and cast to float for sklearn
         return np.array(ph.hash, dtype=float).reshape(-1)
+
+    def _preprocess_for_hash(self, img: Image.Image, opts: ClusteringOptions) -> Image.Image:
+        """
+        Normalize lighting to reduce variance between dark/light faces:
+        - convert to grayscale
+        - apply autocontrast
+        - optional gamma correction
+        """
+        gray = img.convert("L")
+        norm = ImageOps.autocontrast(gray)
+        if opts.gamma and opts.gamma != 1.0:
+            norm = ImageOps.gamma(norm, opts.gamma)
+        return norm
 
     def _run_dbscan(self, X: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
         if len(X) == 1:
