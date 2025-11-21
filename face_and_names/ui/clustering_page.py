@@ -210,6 +210,12 @@ class ClusteringPage(QWidget):
         self.run_btn.setEnabled(True)
         if error:
             self.status_label.setText(f"Clustering failed: {error}")
+            try:
+                import logging
+
+                logging.getLogger(__name__).error("Clustering failed", exc_info=error)
+            except Exception:
+                pass
             return
         self.state = ClusterState(clusters=result, index=0)
         if not result:
