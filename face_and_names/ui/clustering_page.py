@@ -352,8 +352,19 @@ class ClusteringPage(QWidget):
         self.context.conn.commit()
 
     def _on_tile_deleted(self, face_id: int) -> None:
-        # Refresh current cluster after a delete
+        # Remove deleted face from in-memory cluster state and refresh view
+        self._prune_face_from_state(face_id)
         self._show_cluster()
+
+    def _prune_face_from_state(self, face_id: int) -> None:
+        if not self.state.clusters:
+            return
+        for cluster in self.state.clusters:
+            cluster.faces = [f for f in cluster.faces if f.face_id != face_id]
+        # Drop empty clusters except noise (cluster_id 0)
+        self.state.clusters = [c for c in self.state.clusters if c.is_noise or c.faces]
+        if self.state.index >= len(self.state.clusters):
+            self.state.index = max(0, len(self.state.clusters) - 1)
 
     def _assign_person(self, face_id: int, person_id: int | None) -> None:
         self.face_repo.update_person(face_id, person_id)
