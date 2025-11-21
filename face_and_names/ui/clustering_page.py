@@ -113,7 +113,7 @@ class ClusteringPage(QWidget):
         self.last_import_checkbox = QCheckBox("Only last import session")
         self.exclude_named_checkbox = QCheckBox("Exclude faces with names")
         self.algorithm_combo = QComboBox()
-        self.algorithm_combo.addItems(["dbscan"])
+        self.algorithm_combo.addItems(["dbscan", "kmeans"])
         self.eps_spin = QDoubleSpinBox()
         self.eps_spin.setRange(0.01, 1.0)
         self.eps_spin.setSingleStep(0.01)
@@ -122,6 +122,11 @@ class ClusteringPage(QWidget):
         self.min_samples_spin.setRange(1, 100)
         self.min_samples_spin.setSingleStep(1)
         self.min_samples_spin.setValue(1)
+        self.kmeans_clusters_spin = QDoubleSpinBox()
+        self.kmeans_clusters_spin.setRange(1, 500)
+        self.kmeans_clusters_spin.setSingleStep(1)
+        self.kmeans_clusters_spin.setValue(50)
+        self.kmeans_clusters_spin.setEnabled(False)
         self.status_label = QLabel("Select folders and run clustering.")
         self.run_btn = QPushButton("Run clustering")
         self.set_name_btn = QPushButton("Set name")
@@ -164,6 +169,8 @@ class ClusteringPage(QWidget):
         algo_row.addWidget(self.eps_spin)
         algo_row.addWidget(QLabel("min_samples:"))
         algo_row.addWidget(self.min_samples_spin)
+        algo_row.addWidget(QLabel("k (kmeans):"))
+        algo_row.addWidget(self.kmeans_clusters_spin)
         algo_row.addWidget(QLabel("Feature:"))
         algo_row.addWidget(self.feature_source_combo)
         algo_row.addStretch(1)
@@ -193,6 +200,8 @@ class ClusteringPage(QWidget):
         self.prev_btn.clicked.connect(self._prev_cluster)
         self.next_btn.clicked.connect(self._next_cluster)
         self.names_list.itemDoubleClicked.connect(self._on_name_double_clicked)
+        self.algorithm_combo.currentTextChanged.connect(self._on_algorithm_changed)
+        self._on_algorithm_changed(self.algorithm_combo.currentText())
 
     def _load_folders(self) -> None:
         self.folder_list.clear()
@@ -213,6 +222,7 @@ class ClusteringPage(QWidget):
         algorithm = self.algorithm_combo.currentText()
         eps = float(self.eps_spin.value())
         min_samples = int(self.min_samples_spin.value())
+        k_clusters = int(self.kmeans_clusters_spin.value())
         idx = self.feature_source_combo.currentIndex()
         feature_source = {0: "phash", 1: "phash_raw", 2: "raw", 3: "embedding"}.get(idx, "phash")
         self.status_label.setText("Clustering…")
@@ -229,6 +239,7 @@ class ClusteringPage(QWidget):
             algorithm=algorithm,
             eps=eps,
             min_samples=min_samples,
+            k_clusters=k_clusters,
             feature_source=feature_source,
         )
         self._worker.moveToThread(self._thread)
@@ -391,6 +402,12 @@ class ClusteringPage(QWidget):
         window.setLayout(layout)
         window.resize(800, 600)
         window.exec()
+
+    def _on_algorithm_changed(self, algo: str) -> None:
+        is_dbscan = algo.lower() == "dbscan"
+        self.eps_spin.setEnabled(is_dbscan)
+        self.min_samples_spin.setEnabled(is_dbscan)
+        self.kmeans_clusters_spin.setEnabled(not is_dbscan)
 
     def _selected_tiles(self) -> list[FaceTile]:
         return [t for t in self.current_tiles if t.is_selected()]

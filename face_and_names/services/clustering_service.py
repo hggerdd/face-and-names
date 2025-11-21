@@ -11,7 +11,7 @@ from typing import Iterable, List, Sequence
 import imagehash
 import numpy as np
 from PIL import Image, ImageOps
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import DBSCAN, KMeans
 import torch
 from facenet_pytorch import InceptionResnetV1
 
@@ -37,6 +37,7 @@ class ClusteringOptions:
     algorithm: str = "dbscan"
     eps: float = 0.25  # Hamming distance threshold on normalized bits
     min_samples: int = 1
+    k_clusters: int = 50
     last_import_only: bool = False
     folders: Sequence[str] | None = None
     feature_source: str = "phash"  # phash, phash_raw, raw
@@ -65,6 +66,8 @@ class ClusteringService:
         algo = opts.algorithm.lower()
         if algo == "dbscan":
             labels = self._run_dbscan(X, eps=opts.eps, min_samples=int(opts.min_samples))
+        elif algo == "kmeans":
+            labels = self._run_kmeans(X, n_clusters=int(opts.k_clusters))
         else:
             raise ValueError(f"Unsupported algorithm: {opts.algorithm}")
 
@@ -200,6 +203,15 @@ class ClusteringService:
             return np.array([0], dtype=int)  # single face, treat as noise/cluster 0
         model = DBSCAN(eps=eps, min_samples=min_samples, metric="hamming")
         return model.fit_predict(X)
+
+    def _run_kmeans(self, X: np.ndarray, n_clusters: int) -> np.ndarray:
+        if len(X) == 0:
+            return np.array([], dtype=int)
+        n_clusters = max(1, min(n_clusters, len(X)))
+        model = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+        labels = model.fit_predict(X)
+        # shift labels to start at 1; kmeans has no noise notion, so 0 is a valid cluster
+        return labels + 1
 
     def _renumber_labels(self, labels: np.ndarray) -> list[int]:
         mapping: dict[int, int] = {}
