@@ -84,6 +84,7 @@ class PredictionApplyWorker(QThread):
                     conn,
                     self.service,
                     unnamed_only=self.unnamed_only,
+                    assign_person=False,
                     progress=lambda label, pct: self.progress.emit(label, pct),
                     should_stop=lambda: self._stop.is_set(),
                 )

@@ -18,6 +18,7 @@ def apply_predictions(
     service: PredictionService,
     *,
     unnamed_only: bool = False,
+    assign_person: bool = False,
     progress: Callable[[str, int], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> int:
@@ -58,7 +59,8 @@ def apply_predictions(
         if progress:
             progress(f"Predicting {label}", int(idx / total * 100))
         res = service.predict_batch([blob])[0]
-        repo.update_person(face_id, res.get("person_id"))
+        if assign_person:
+            repo.update_person(face_id, res.get("person_id"))
         conn.execute(
             "UPDATE face SET predicted_person_id = ?, prediction_confidence = ? WHERE id = ?",
             (res.get("person_id"), res.get("confidence"), face_id),
