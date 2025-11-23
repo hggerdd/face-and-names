@@ -6,7 +6,7 @@ Creates the navigation frame and placeholder views aligned to docs/ui_wireframes
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Callable, Dict
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -21,13 +21,6 @@ from PyQt6.QtWidgets import (
 )
 
 from face_and_names.app_context import AppContext
-from face_and_names.ui.import_page import ImportPage
-from face_and_names.ui.faces_page import FacesPage
-from face_and_names.ui.clustering_page import ClusteringPage
-from face_and_names.ui.people_groups_page import PeopleGroupsPage
-from face_and_names.ui.prediction_training_page import PredictionTrainingPage
-from face_and_names.ui.prediction_review_page import PredictionReviewPage
-from face_and_names.ui.settings_page import SettingsPage
 
 
 class MainWindow(QMainWindow):
@@ -41,6 +34,7 @@ class MainWindow(QMainWindow):
         self.nav = QListWidget(self)
         self.stacked = QStackedWidget(self)
         self._pages: Dict[str, QWidget] = {}
+        self._factories: Dict[str, Callable[[], QWidget]] = {}
 
         self._build_ui()
 
@@ -60,69 +54,96 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        self._add_page(
-            "Faces",
-            placeholder="Faces workspace: clusters/predictions/people views",
-            widget=FacesPage(self.context),
-        )
-        self._add_page(
-            "Import",
-            placeholder="Ingest photos from DB Root with progress/resume",
-            widget=ImportPage(self.context, on_context_changed=self._replace_context),
-        )
-        self._add_page(
-            "Clustering",
-            placeholder="Configure and run clustering jobs",
-            widget=ClusteringPage(self.context),
-        )
-        self._add_page(
-            "Prediction Model Training",
-            placeholder="Prepare and train prediction models (coming soon)",
-            widget=PredictionTrainingPage(self.context),
-        )
-        self._add_page(
-            "Prediction Review",
-            placeholder="Review and accept model predictions",
-            widget=PredictionReviewPage(self.context),
-        )
-        self._add_page(
-            "People & Groups",
-            placeholder="Manage people records, aliases, groups",
-            widget=PeopleGroupsPage(self.context.people_service if hasattr(self.context, "people_service") else None),
-        )
+        # Factories for lazy loading
+        # FacesPage is default, so we can load it eagerly or lazy-but-immediately-triggered
+        def create_faces():
+            from face_and_names.ui.faces_page import FacesPage
+            return FacesPage(self.context)
+
+        def create_import():
+            from face_and_names.ui.import_page import ImportPage
+            return ImportPage(self.context, on_context_changed=self._replace_context)
+
+        def create_clustering():
+            from face_and_names.ui.clustering_page import ClusteringPage
+            return ClusteringPage(self.context)
+
+        def create_training():
+            from face_and_names.ui.prediction_training_page import PredictionTrainingPage
+            return PredictionTrainingPage(self.context)
+
+        def create_review():
+            from face_and_names.ui.prediction_review_page import PredictionReviewPage
+            return PredictionReviewPage(self.context)
+
+        def create_people():
+            from face_and_names.ui.people_groups_page import PeopleGroupsPage
+            return PeopleGroupsPage(self.context.people_service if hasattr(self.context, "people_service") else None)
+
+        def create_settings():
+            from face_and_names.ui.settings_page import SettingsPage
+            return SettingsPage(self.context)
+
+        self._add_page("Faces", "Faces workspace: clusters/predictions/people views", factory=create_faces)
+        self._add_page("Import", "Ingest photos from DB Root with progress/resume", factory=create_import)
+        self._add_page("Clustering", "Configure and run clustering jobs", factory=create_clustering)
+        self._add_page("Prediction Model Training", "Prepare and train prediction models", factory=create_training)
+        self._add_page("Prediction Review", "Review and accept model predictions", factory=create_review)
+        self._add_page("People & Groups", "Manage people records, aliases, groups", factory=create_people)
         self._add_page("Diagnostics", "Model/DB health, self-test, repair tools")
-        self._add_page("Settings", "App preferences, device/worker caps, paths", widget=SettingsPage(self.context))
+        self._add_page("Settings", "App preferences, device/worker caps, paths", factory=create_settings)
 
         # Default selection
         if self.nav.count():
             self.nav.setCurrentRow(0)
 
-    def _add_page(self, name: str, placeholder: str, widget: QWidget | None = None) -> None:
-        """Add a nav item and corresponding page."""
+    def _add_page(self, name: str, placeholder: str, factory: Callable[[], QWidget] | None = None) -> None:
+        """Add a nav item and register factory."""
         item = QListWidgetItem(name)
         item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.nav.addItem(item)
 
-        if widget is None:
-            page = QWidget(self)
-            vbox = QVBoxLayout()
-            vbox.addWidget(QLabel(f"<b>{name}</b>"), alignment=Qt.AlignmentFlag.AlignTop)
-            vbox.addWidget(QLabel(placeholder))
-            vbox.addStretch(1)
-            page.setLayout(vbox)
-        else:
-            page = widget
+        # Create placeholder
+        page = QWidget(self)
+        vbox = QVBoxLayout()
+        vbox.addWidget(QLabel(f"<b>{name}</b>"), alignment=Qt.AlignmentFlag.AlignTop)
+        vbox.addWidget(QLabel(placeholder))
+        if factory:
+            vbox.addWidget(QLabel("<i>Loading...</i>"))
+        vbox.addStretch(1)
+        page.setLayout(vbox)
 
         self.stacked.addWidget(page)
         self._pages[name] = page
+        if factory:
+            self._factories[name] = factory
 
     def _on_nav_changed(self) -> None:
-        """Switch stacked widget when nav selection changes."""
-        current_items: List[QListWidgetItem] = self.nav.selectedItems()
+        """Switch stacked widget when nav selection changes, instantiating if needed."""
+        current_items: list[QListWidgetItem] = self.nav.selectedItems()
         if not current_items:
             return
         name = current_items[0].text()
         index = self.nav.row(current_items[0])
+        
+        # Check if we need to instantiate
+        if name in self._factories:
+            factory = self._factories.pop(name)
+            try:
+                # Show wait cursor or similar if needed, but for now just create
+                real_widget = factory()
+                # Replace placeholder in stack
+                old_widget = self.stacked.widget(index)
+                self.stacked.removeWidget(old_widget)
+                self.stacked.insertWidget(index, real_widget)
+                self.stacked.setCurrentIndex(index)
+                self._pages[name] = real_widget
+                # old_widget is garbage collected
+            except Exception as exc:
+                print(f"Failed to load page {name}: {exc}")
+                # Keep placeholder but maybe update text?
+                return
+
         if name in self._pages:
             self.stacked.setCurrentIndex(index)
             page = self._pages[name]
