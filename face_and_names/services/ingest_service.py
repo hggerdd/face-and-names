@@ -84,6 +84,7 @@ class IngestService:
         self._known_person_ids: set[int] = {
             int(row[0]) for row in self.conn.execute("SELECT id FROM person").fetchall()
         }
+        self._existing_paths: set[str] = set()
 
     def start_session(
         self,
@@ -98,14 +99,24 @@ class IngestService:
         self._ensure_scoped_to_root(resolved_folders)
 
         session_id = self.sessions.create(folder_count=len(resolved_folders), image_count=0)
+        self._existing_paths = {
+            row[0] for row in self.conn.execute("SELECT relative_path FROM image").fetchall()
+        }
         processed = 0
         skipped_existing = 0
         face_count = 0
         no_face_images = 0
         errors: List[str] = []
-        paths_all = list(self._iter_images(resolved_folders, recursive=opts.recursive))
+        paths_all: list[Path] = list(self._iter_images(resolved_folders, recursive=opts.recursive))
         start_index = int(checkpoint.get("next_index", 0)) if checkpoint else 0
-        paths = paths_all[start_index:]
+        remaining = paths_all[start_index:]
+        paths: list[Path] = []
+        for path in remaining:
+            rel = self._relative_path_str(path)
+            if rel in self._existing_paths:
+                skipped_existing += 1
+                continue
+            paths.append(path)
         total = len(paths)
         cancelled = False
         checkpoint_payload: dict[str, object] | None = {"next_index": start_index}
@@ -239,6 +250,7 @@ class IngestService:
         filename = image_path.name
         has_faces = 0
         import_id = session_id
+        self._existing_paths.add(str(relative_path).replace("\\", "/"))
 
         image_id = self.images.add(
             import_id=import_id,
@@ -271,6 +283,9 @@ class IngestService:
         self.conn.execute("UPDATE image SET has_faces = ? WHERE id = ?", (has_faces, image_id))
 
         return True, thumb_bytes, face_preview, faces_added
+
+    def _relative_path_str(self, path: Path) -> str:
+        return str(path.resolve().relative_to(self.db_root.resolve())).replace("\\", "/")
 
     def _process_image(self, raw_bytes: bytes) -> tuple[bytes, int, int, int, bytes, dict[str, str]]:
         """Return normalized bytes, phash, dimensions, thumbnail bytes, and metadata."""

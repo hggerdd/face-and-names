@@ -23,7 +23,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 ### 4.1 Source Scoping and Ingest
 - **FR-001** The system shall limit ingestion to images located in the DB Root and its subfolders only. **[REQ]**
 - **FR-002** The system shall store all image paths relative to the DB Root to permit drive/mount changes without breaking references. **[REQ]**
-- **FR-003** The system shall skip ingesting any image already present based on the image identity scheme (see Data Model). **[REQ]**
+- **FR-003** The system shall skip ingesting any image already present based on the image identity scheme (see Data Model); when a matching relative path (folder + filename + extension) already exists in the DB Root, ingest may short-circuit before hashing to improve throughput. **[REQ][DER]**
 - **FR-004** The system shall support selecting one or more folders under the DB Root with a recursive option and per-subfolder checkboxes. **[REQ]**
 - **FR-005** The system shall remember the last-used folder selection in a user config file. **[REQ]**
 - **FR-071** The application shall allow choosing or creating the DB Root (SQLite file location) at runtime, treating that folder as the scope for ingest and relative paths. **[DER][USER]**

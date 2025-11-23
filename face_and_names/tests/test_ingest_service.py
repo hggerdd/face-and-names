@@ -121,6 +121,36 @@ def test_ingest_skips_invalid_detection_boxes(monkeypatch, tmp_path: Path) -> No
     assert face_rows == 0
 
 
+def test_ingest_skips_existing_paths_without_hash(monkeypatch, tmp_path: Path) -> None:
+    db_root = tmp_path / "dbroot"
+    photos = db_root / "photos"
+    img1 = photos / "a.jpg"
+    _make_image(img1, (10, 10), color="yellow")
+
+    conn = initialize_database(db_root / "faces.db")
+    ingest1 = IngestService(db_root=db_root, conn=conn)
+    ingest1.start_session([photos], options=IngestOptions(recursive=False))
+
+    # Change file contents to ensure hash would differ; second ingest should still skip by path
+    _make_image(img1, (12, 12), color="purple")
+
+    ingest2 = IngestService(db_root=db_root, conn=conn)
+
+    def fake_process(paths, cancel_event=None):
+        # Should receive no paths because it is skipped by relative path
+        assert not list(paths)
+        return iter([])
+
+    monkeypatch.setattr(ingest2, "_process_paths", fake_process)
+
+    progress = ingest2.start_session([photos], options=IngestOptions(recursive=False))
+
+    assert progress.processed == 0
+    assert progress.skipped_existing == 1
+    count = conn.execute("SELECT COUNT(*) FROM image").fetchone()[0]
+    assert count == 1
+
+
 def test_ingest_supports_cancellation_and_resume(tmp_path: Path) -> None:
     db_root = tmp_path / "dbroot"
     photos = db_root / "photos"
