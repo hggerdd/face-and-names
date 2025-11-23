@@ -22,6 +22,7 @@ from face_and_names.services.workers import JobManager
 from face_and_names.utils.event_bus import EventBus
 from face_and_names.services.people_service import PeopleService
 from face_and_names.services.person_registry import default_registry_path
+from face_and_names.services.prediction_service import PredictionService
 
 ENV_CONFIG_DIR = "FACE_AND_NAMES_CONFIG_DIR"
 ENV_DB_PATH = "FACE_AND_NAMES_DB_PATH"
@@ -39,6 +40,7 @@ class AppContext:
     events: EventBus
     people_service: PeopleService
     registry_path: Path
+    prediction_service: PredictionService | None
 
 
 def default_config_dir() -> Path:
@@ -88,6 +90,11 @@ def initialize_app(
     events = EventBus()
     registry_path = default_registry_path(base_dir or Path.cwd())
     people_service = PeopleService(conn, registry_path=registry_path)
+    prediction_service: PredictionService | None = None
+    try:
+        prediction_service = PredictionService(model_dir=Path("model"))
+    except Exception:
+        prediction_service = None
 
     return AppContext(
         config=config,
@@ -98,6 +105,7 @@ def initialize_app(
         events=events,
         people_service=people_service,
         registry_path=registry_path,
+        prediction_service=prediction_service,
     )
 
 

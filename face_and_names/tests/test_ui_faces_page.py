@@ -46,6 +46,7 @@ def context(conn: sqlite3.Connection, db_path: Path) -> AppContext:
         events=EventBus(),
         people_service=people_service,
         registry_path=registry_path,
+        prediction_service=None,
     )
 
 

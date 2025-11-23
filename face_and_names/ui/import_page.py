@@ -50,6 +50,7 @@ class IngestWorker(QObject):
         checkpoint: dict | None = None,
         crop_expand_pct: float = 0.05,
         face_target_size: int = 224,
+        prediction_service=None,
     ) -> None:
         super().__init__()
         self.db_root = db_root
@@ -59,6 +60,7 @@ class IngestWorker(QObject):
         self.checkpoint = checkpoint
         self.crop_expand_pct = crop_expand_pct
         self.face_target_size = face_target_size
+        self.prediction_service = prediction_service
 
     def run(self) -> None:
         conn = initialize_database(self.db_root / "faces.db")
@@ -67,6 +69,7 @@ class IngestWorker(QObject):
             conn=conn,
             crop_expand_pct=self.crop_expand_pct,
             face_target_size=self.face_target_size,
+            prediction_service=self.prediction_service,
         )
         progress = service.start_session(
             self.folders,
@@ -206,6 +209,7 @@ class ImportPage(QWidget):
             checkpoint=use_checkpoint,
             crop_expand_pct=crop_expand_pct,
             face_target_size=face_target_size,
+            prediction_service=self.context.prediction_service,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

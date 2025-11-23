@@ -31,6 +31,7 @@ from face_and_names.models.repositories import (
     MetadataRepository,
 )
 from face_and_names.services.detector_adapter import DetectorAdapter, FaceDetection  # type: ignore
+from face_and_names.services.prediction_service import PredictionService
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,9 +61,16 @@ class IngestProgress:
 
 
 class IngestService:
-    """Ingest images into the database, without detection/prediction."""
+    """Ingest images into the database, optionally applying detection + prediction."""
 
-    def __init__(self, db_root: Path, conn, crop_expand_pct: float = 0.05, face_target_size: int = 224) -> None:
+    def __init__(
+        self,
+        db_root: Path,
+        conn,
+        crop_expand_pct: float = 0.05,
+        face_target_size: int = 224,
+        prediction_service: PredictionService | None = None,
+    ) -> None:
         self.db_root = db_root
         self.conn = conn
         self.sessions = ImportSessionRepository(conn)
@@ -72,6 +80,10 @@ class IngestService:
         self.processing_workers = max(2, min(8, (os.cpu_count() or 4)))
         self.crop_expand_pct = crop_expand_pct
         self.face_target_size = max(1, int(face_target_size))
+        self.prediction_service = prediction_service
+        self._known_person_ids: set[int] = {
+            int(row[0]) for row in self.conn.execute("SELECT id FROM person").fetchall()
+        }
 
     def start_session(
         self,
@@ -379,6 +391,7 @@ class IngestService:
         with Image.open(BytesIO(normalized_bytes)) as image:
             image.load()
             img_w, img_h = image.size
+            face_entries: list[tuple[FaceDetection, bytes]] = []
             for idx, det in enumerate(detections):
                 if len(det.bbox_abs) != 4 or len(det.bbox_rel) != 4:
                     LOGGER.warning("Skipping invalid detection bbox for %s: %s", image_path, det.bbox_abs)
@@ -386,6 +399,23 @@ class IngestService:
                 x, y, w, h = self._expand_bbox(det.bbox_abs, img_w, img_h, self.crop_expand_pct)
                 crop = image.crop((x, y, x + w, y + h))
                 crop_bytes = self._normalize_crop(crop, target_size=self.face_target_size)
+                face_entries.append((det, crop_bytes))
+                if idx < 5:
+                    preview.append(crop_bytes)
+            predictions: list[dict[str, object]] = []
+            if self.prediction_service and face_entries:
+                try:
+                    predictions = self.prediction_service.predict_batch([cb for _, cb in face_entries])
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    LOGGER.warning("Prediction failed for %s: %s", image_path, exc)
+                    predictions = [{} for _ in face_entries]
+            for idx, (det, crop_bytes) in enumerate(face_entries):
+                pred = predictions[idx] if idx < len(predictions) else {}
+                predicted_pid = None
+                confidence = None
+                if isinstance(pred, dict):
+                    predicted_pid = self._resolve_predicted_id(pred.get("person_id"))
+                    confidence = pred.get("confidence")
                 self.faces.add(
                     image_id=image_id,
                     bbox_abs=det.bbox_abs,
@@ -394,13 +424,11 @@ class IngestService:
                     face_detection_index=det.confidence,
                     cluster_id=None,
                     person_id=None,
-                    predicted_person_id=None,
-                    prediction_confidence=None,
+                    predicted_person_id=predicted_pid,
+                    prediction_confidence=confidence,
                     provenance="detected",
                 )
                 stored += 1
-                if idx < 5:
-                    preview.append(crop_bytes)
         return preview, stored
 
     def _normalize_crop(self, crop: Image.Image, target_size: int) -> bytes:
@@ -418,6 +446,16 @@ class IngestService:
         buf = BytesIO()
         bg.save(buf, format="JPEG", quality=85, optimize=True)
         return buf.getvalue()
+
+    def _resolve_predicted_id(self, predicted_id: object | None) -> int | None:
+        """Ensure predicted ID exists in DB to satisfy FK constraints."""
+        try:
+            pid_int = int(predicted_id) if predicted_id is not None else None
+        except Exception:
+            return None
+        if pid_int in self._known_person_ids:
+            return pid_int
+        return None
 
     def _process_single_path(self, path: Path) -> "ProcessedImage":
         try:

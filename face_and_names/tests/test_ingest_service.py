@@ -4,6 +4,7 @@ import threading
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageFile
 
 from face_and_names.models.db import initialize_database
@@ -220,3 +221,40 @@ def test_face_crops_are_normalized(monkeypatch, tmp_path: Path) -> None:
     assert row is not None
     with Image.open(BytesIO(row[0])) as crop:
         assert crop.size == (64, 64)
+
+
+def test_ingest_applies_prediction(monkeypatch, tmp_path: Path) -> None:
+    class DummyDetector:
+        def detect_batch(self, images):
+            class Det:
+                bbox_abs = (0.0, 0.0, 10.0, 10.0)
+                bbox_rel = (0.0, 0.0, 0.1, 0.1)
+                confidence = 0.7
+
+            return [[Det()]]
+
+    class DummyPredictor:
+        def predict_batch(self, blobs):
+            DummyPredictor.called_with = len(blobs)
+            return [{"person_id": 1, "confidence": 0.55} for _ in blobs]
+
+    db_root = tmp_path / "dbroot"
+    photos = db_root / "photos"
+    img1 = photos / "a.jpg"
+    _make_image(img1, (20, 20))
+
+    conn = initialize_database(db_root / "faces.db")
+    conn.execute("INSERT INTO person (id, primary_name, first_name, last_name) VALUES (1, 'Test Person', 'Test', 'Person')")
+    conn.commit()
+    predictor = DummyPredictor()
+    ingest = IngestService(db_root=db_root, conn=conn, prediction_service=predictor)
+    monkeypatch.setattr(ingest, "_load_detector", lambda: DummyDetector())
+
+    progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
+
+    assert progress.face_count == 1
+    assert getattr(DummyPredictor, "called_with", 0) == 1
+    row = conn.execute(
+        "SELECT predicted_person_id, prediction_confidence FROM face"
+    ).fetchone()
+    assert row == (1, pytest.approx(0.55))

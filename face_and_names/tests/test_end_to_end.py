@@ -42,6 +42,7 @@ def test_e2e_ingest_to_person_assignment(tmp_path: Path) -> None:
         events=EventBus(),
         people_service=people_service,
         registry_path=registry_path,
+        prediction_service=None,
     )
     
     # 2. Ingest
