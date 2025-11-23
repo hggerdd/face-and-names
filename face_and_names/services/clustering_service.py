@@ -223,8 +223,11 @@ class ClusteringService:
                 LOGGER.warning("ArcFace model load failed: %s; using FaceNet", exc)
                 return self._embedding_vector(img, opts)
             try:
-                self._arcface_model = get_model("arcface_r100_v1")
-                self._arcface_model.prepare(ctx_id=-1)
+                model = get_model("arcface_r100_v1")
+                if model is None or not hasattr(model, "prepare"):
+                    raise RuntimeError("arcface_r100_v1 model unavailable")
+                model.prepare(ctx_id=-1)
+                self._arcface_model = model
             except Exception as exc:  # pragma: no cover
                 LOGGER.warning("ArcFace model prepare failed: %s; using FaceNet", exc)
                 return self._embedding_vector(img, opts)
