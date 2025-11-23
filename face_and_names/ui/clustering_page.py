@@ -139,7 +139,9 @@ class ClusteringPage(QWidget):
         self.next_btn.setEnabled(False)
         self.cluster_label = QLabel("No clusters loaded")
         self.feature_source_combo = QComboBox()
-        self.feature_source_combo.addItems(["pHash (normalized)", "pHash (raw)", "Raw (downscaled)", "Embedding (FaceNet)"])
+        self.feature_source_combo.addItems(
+            ["pHash (normalized)", "pHash (raw)", "Raw (downscaled)", "Embedding (FaceNet)", "Embedding (ArcFace)"]
+        )
         self.faces_area = QScrollArea()
         self.faces_area.setWidgetResizable(True)
         self.faces_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -238,7 +240,7 @@ class ClusteringPage(QWidget):
         min_samples = int(self.min_samples_spin.value())
         k_clusters = int(self.kmeans_clusters_spin.value())
         idx = self.feature_source_combo.currentIndex()
-        feature_source = {0: "phash", 1: "phash_raw", 2: "raw", 3: "embedding"}.get(idx, "phash")
+        feature_source = {0: "phash", 1: "phash_raw", 2: "raw", 3: "embedding", 4: "arcface"}.get(idx, "phash")
         self.status_label.setText("Clustering…")
         self.run_btn.setEnabled(False)
         self.prev_btn.setEnabled(False)

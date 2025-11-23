@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Iterable, List, Sequence
+import logging
 
 import imagehash
 import numpy as np
@@ -14,6 +15,8 @@ from PIL import Image, ImageOps
 from sklearn.cluster import DBSCAN, KMeans
 import torch
 from facenet_pytorch import InceptionResnetV1
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -40,7 +43,7 @@ class ClusteringOptions:
     k_clusters: int = 50
     last_import_only: bool = False
     folders: Sequence[str] | None = None
-    feature_source: str = "phash"  # phash, phash_raw, raw
+    feature_source: str = "phash"  # phash, phash_raw, raw, embedding, arcface
     normalize_faces: bool = True
     gamma: float = 1.0
     exclude_named: bool = False
@@ -52,6 +55,7 @@ class ClusteringService:
     def __init__(self, conn) -> None:
         self.conn = conn
         self._embed_model: InceptionResnetV1 | None = None
+        self._arcface_model = None
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def cluster_faces(self, options: ClusteringOptions | None = None) -> List[ClusterResult]:
@@ -150,6 +154,8 @@ class ClusteringService:
                 return self._raw_vector(img, opts)
             elif opts.feature_source == "embedding":
                 return self._embedding_vector(img, opts)
+            elif opts.feature_source == "arcface":
+                return self._arcface_vector(img, opts)
             else:
                 raise ValueError(f"Unsupported feature_source: {opts.feature_source}")
 
@@ -197,6 +203,45 @@ class ClusteringService:
         if self._embed_model is None:
             self._embed_model = InceptionResnetV1(pretrained="vggface2").eval().to(self._device)
         return self._embed_model
+
+    def _arcface_vector(self, img: Image.Image, opts: ClusteringOptions) -> np.ndarray:
+        """
+        Compute ArcFace embedding for clustering.
+        Requires `insightface`; falls back to FaceNet embedding if unavailable.
+        """
+        try:
+            import numpy as _np
+            import insightface  # type: ignore
+        except Exception as exc:  # pragma: no cover - optional dependency
+            LOGGER.warning("ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc)
+            return self._embedding_vector(img, opts)
+
+        if self._arcface_model is None:
+            try:
+                from insightface.model_zoo import get_model  # type: ignore
+            except Exception as exc:  # pragma: no cover
+                LOGGER.warning("ArcFace model load failed: %s; using FaceNet", exc)
+                return self._embedding_vector(img, opts)
+            try:
+                self._arcface_model = get_model("arcface_r100_v1")
+                self._arcface_model.prepare(ctx_id=-1)
+            except Exception as exc:  # pragma: no cover
+                LOGGER.warning("ArcFace model prepare failed: %s; using FaceNet", exc)
+                return self._embedding_vector(img, opts)
+
+        proc = img.convert("RGB").resize((112, 112), Image.Resampling.BILINEAR)
+        arr = _np.asarray(proc, dtype=_np.float32)
+        arr = arr[:, :, ::-1]  # RGB -> BGR as expected by insightface
+        try:
+            emb = self._arcface_model.get_embedding(arr)
+        except Exception as exc:  # pragma: no cover
+            LOGGER.warning("ArcFace embedding failed: %s; using FaceNet", exc)
+            return self._embedding_vector(img, opts)
+        vec = _np.asarray(emb).reshape(-1)
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
+        return vec
 
     def _run_dbscan(self, X: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
         if len(X) == 1:
