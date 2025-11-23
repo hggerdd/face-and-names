@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
 )
 
 from face_and_names.app_context import AppContext
+from face_and_names.models.db import initialize_database
+from face_and_names.services.people_service import PeopleService
 
 
 class MainWindow(QMainWindow):
@@ -78,7 +80,7 @@ class MainWindow(QMainWindow):
 
         def create_people():
             from face_and_names.ui.people_groups_page import PeopleGroupsPage
-            return PeopleGroupsPage(self.context.people_service if hasattr(self.context, "people_service") else None)
+            return PeopleGroupsPage(self._ensure_people_service)
 
         def create_settings():
             from face_and_names.ui.settings_page import SettingsPage
@@ -156,3 +158,22 @@ class MainWindow(QMainWindow):
     def _replace_context(self, new_context: AppContext) -> None:
         """Replace shared context when DB Root changes."""
         self.context = new_context
+
+    def _ensure_people_service(self) -> PeopleService | None:
+        """
+        Return a live PeopleService, recreating the connection if it was closed.
+        This keeps the People & Groups page resilient when the DB is reloaded.
+        """
+        try:
+            self.context.conn.execute("SELECT 1")
+            return self.context.people_service
+        except Exception:
+            pass
+
+        try:
+            conn = initialize_database(self.context.db_path)
+            self.context.conn = conn
+            self.context.people_service = PeopleService(conn, registry_path=self.context.registry_path)
+            return self.context.people_service
+        except Exception:
+            return None

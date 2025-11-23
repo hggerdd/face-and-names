@@ -10,7 +10,7 @@ DESIGN:
 
 from __future__ import annotations
 
-from typing import List
+from typing import Callable, List
 
 from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from PyQt6.QtWidgets import (
@@ -106,9 +106,9 @@ class PersonEditDialog(QDialog):
 
 
 class PeopleGroupsPage(QWidget):
-    def __init__(self, people_service: PeopleService, parent: QWidget | None = None) -> None:
+    def __init__(self, service_provider: Callable[[], PeopleService | None], parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.people_service = people_service
+        self._service_provider = service_provider
         self.table = QTableView()
         self.model = PeopleTableModel([])
         self.table.setModel(self.model)
@@ -131,8 +131,17 @@ class PeopleGroupsPage(QWidget):
 
         self._refresh()
 
+    def _service(self) -> PeopleService | None:
+        return self._service_provider()
+
     def _refresh(self) -> None:
-        people = self.people_service.list_people()
+        service = self._service()
+        if service is None:
+            return
+        try:
+            people = service.list_people()
+        except Exception:
+            return
         self.model.update_people(people)
 
     def showEvent(self, event) -> None:  # type: ignore[override]
@@ -154,8 +163,11 @@ class PeopleGroupsPage(QWidget):
         if not first and not last:
             QMessageBox.warning(self, "Missing name", "First or last name is required.")
             return
-        pid = self.people_service.create_person(first, last, short_name=short)
-        self.people_service.rename_person(pid, first, last, short)
+        service = self._service()
+        if service is None:
+            return
+        pid = service.create_person(first, last, short_name=short)
+        service.rename_person(pid, first, last, short)
         self._refresh()
 
     def _on_edit(self) -> None:
@@ -171,7 +183,10 @@ class PeopleGroupsPage(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         first, last, short = dlg.values()
-        self.people_service.rename_person(person["id"], first, last, short)
+        service = self._service()
+        if service is None:
+            return
+        service.rename_person(person["id"], first, last, short)
         self._refresh()
 
     def _on_delete(self) -> None:
@@ -183,6 +198,9 @@ class PeopleGroupsPage(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        self.people_service.conn.execute("DELETE FROM person WHERE id = ?", (person["id"],))
-        self.people_service.conn.commit()
+        service = self._service()
+        if service is None:
+            return
+        service.conn.execute("DELETE FROM person WHERE id = ?", (person["id"],))
+        service.conn.commit()
         self._refresh()
