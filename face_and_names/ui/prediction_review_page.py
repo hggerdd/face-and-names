@@ -45,6 +45,8 @@ class FaceRow:
 
 
 class PredictionReviewPage(QWidget):
+    PAGE_SIZE = 20
+
     def __init__(self, context: AppContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.context = context
@@ -63,6 +65,12 @@ class PredictionReviewPage(QWidget):
         self.unnamed_only = QCheckBox("Unnamed only (no assigned name)")
         self.refresh_btn = QPushButton("Refresh")
         self.accept_btn = QPushButton("Take prediction over")
+
+        # Pagination controls
+        self.prev_btn = QPushButton("<")
+        self.next_btn = QPushButton(">")
+        self.page_label = QLabel("Page 1")
+        self.current_page = 0
 
         self.faces_area = QScrollArea()
         self.faces_area.setWidgetResizable(True)
@@ -86,6 +94,12 @@ class PredictionReviewPage(QWidget):
         filters.addWidget(self.max_conf)
         filters.addWidget(self.unnamed_only)
         filters.addStretch(1)
+        
+        # Pagination UI
+        filters.addWidget(self.prev_btn)
+        filters.addWidget(self.page_label)
+        filters.addWidget(self.next_btn)
+        
         filters.addWidget(self.refresh_btn)
         filters.addWidget(self.accept_btn)
 
@@ -102,13 +116,30 @@ class PredictionReviewPage(QWidget):
         self.setLayout(main)
 
         self.people_list.itemSelectionChanged.connect(self._on_person_selected)
-        self.min_conf.valueChanged.connect(lambda _: self._load_faces())
-        self.max_conf.valueChanged.connect(lambda _: self._load_faces())
-        self.unnamed_only.stateChanged.connect(lambda _: self._load_faces())
+        self.min_conf.valueChanged.connect(self._reset_and_load)
+        self.max_conf.valueChanged.connect(self._reset_and_load)
+        self.unnamed_only.stateChanged.connect(self._reset_and_load)
         self.refresh_btn.clicked.connect(self.refresh_data)
         self.accept_btn.clicked.connect(self._accept_predictions)
+        
+        self.prev_btn.clicked.connect(self._prev_page)
+        self.next_btn.clicked.connect(self._next_page)
 
     def _on_person_selected(self) -> None:
+        self.current_page = 0
+        self._load_faces()
+
+    def _reset_and_load(self) -> None:
+        self.current_page = 0
+        self._load_faces()
+
+    def _prev_page(self) -> None:
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._load_faces()
+
+    def _next_page(self) -> None:
+        self.current_page += 1
         self._load_faces()
 
     def refresh_data(self) -> None:
@@ -166,13 +197,28 @@ class PredictionReviewPage(QWidget):
     def _load_faces(self) -> None:
         self._clear_faces()
         pid = self._selected_person_id()
-        rows = self._fetch_faces(predicted_person_id=pid)
-        if not rows:
+        
+        offset = self.current_page * self.PAGE_SIZE
+        # Fetch one extra to check if there is a next page
+        limit = self.PAGE_SIZE + 1
+        
+        rows = self._fetch_faces(predicted_person_id=pid, limit=limit, offset=offset)
+        
+        has_next = len(rows) > self.PAGE_SIZE
+        display_rows = rows[:self.PAGE_SIZE]
+        
+        # Update pagination UI
+        self.page_label.setText(f"Page {self.current_page + 1}")
+        self.prev_btn.setEnabled(self.current_page > 0)
+        self.next_btn.setEnabled(has_next)
+        
+        if not display_rows:
             self.status_label.setText("No predictions to review.")
             return
+
         people = {p["id"]: p for p in self.people_service.list_people()}
         max_cols = 4
-        for idx, row in enumerate(rows):
+        for idx, row in enumerate(display_rows):
             tile = FaceTile(
                 FaceTileData(
                     face_id=row.face_id,
@@ -196,9 +242,9 @@ class PredictionReviewPage(QWidget):
             row_idx, col_idx = divmod(idx, max_cols)
             self.faces_layout.addWidget(tile, row_idx, col_idx, alignment=Qt.AlignmentFlag.AlignTop)
             self.current_tiles.append(tile)
-        self.status_label.setText(f"{len(rows)} faces")
+        self.status_label.setText(f"Showing {len(display_rows)} faces")
 
-    def _fetch_faces(self, predicted_person_id: int | None) -> List[FaceRow]:
+    def _fetch_faces(self, predicted_person_id: int | None, limit: int, offset: int) -> List[FaceRow]:
         params = []
         filters = ["f.predicted_person_id IS NOT NULL"]
         if predicted_person_id is not None:
@@ -210,7 +256,13 @@ class PredictionReviewPage(QWidget):
         max_c = float(self.max_conf.value())
         filters.append("COALESCE(f.prediction_confidence, 0) BETWEEN ? AND ?")
         params.extend([min_c, max_c])
+        
         where = " AND ".join(filters)
+        
+        # Add LIMIT and OFFSET
+        params.append(limit)
+        params.append(offset)
+        
         rows = self.context.conn.execute(
             f"""
             SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id, pp.primary_name,
@@ -220,6 +272,7 @@ class PredictionReviewPage(QWidget):
             LEFT JOIN person pp ON pp.id = f.predicted_person_id
             WHERE {where}
             ORDER BY COALESCE(f.prediction_confidence, 0) DESC, f.id
+            LIMIT ? OFFSET ?
             """,
             params,
         ).fetchall()
@@ -268,7 +321,9 @@ class PredictionReviewPage(QWidget):
             self._load_people()
         except Exception as exc:  # pragma: no cover - UI safety
             QMessageBox.critical(self, "Accept failed", str(exc))
+
     def _after_change(self) -> None:
+        # Don't reset page on single action, just reload current page
         self._load_faces()
         self._load_people()
 
