@@ -25,6 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 detector-mtcnn = ["facenet-pytorch>=2.5.3", "torch>=2.2.0"]
 onnx = ["onnxruntime>=1.16.0"]
+arcface = ["insightface>=0.7.3", "onnxruntime>=1.16.0", "opencv-python>=4.9.0"]
 dev = [
   "pytest>=8.0.0",
   "ruff>=0.3.0",
