@@ -21,6 +21,7 @@ from face_and_names.models.db import initialize_database
 from face_and_names.services.workers import JobManager
 from face_and_names.utils.event_bus import EventBus
 from face_and_names.services.people_service import PeopleService
+from face_and_names.services.person_registry import default_registry_path
 
 ENV_CONFIG_DIR = "FACE_AND_NAMES_CONFIG_DIR"
 ENV_DB_PATH = "FACE_AND_NAMES_DB_PATH"
@@ -37,6 +38,7 @@ class AppContext:
     job_manager: JobManager
     events: EventBus
     people_service: PeopleService
+    registry_path: Path
 
 
 def default_config_dir() -> Path:
@@ -84,7 +86,8 @@ def initialize_app(
     worker_cfg = config.get("workers", {}) if isinstance(config, dict) else {}
     job_manager = JobManager(max_workers=int(worker_cfg.get("cpu_max", 2)))
     events = EventBus()
-    people_service = PeopleService(conn)
+    registry_path = default_registry_path(base_dir or Path.cwd())
+    people_service = PeopleService(conn, registry_path=registry_path)
 
     return AppContext(
         config=config,
@@ -94,6 +97,7 @@ def initialize_app(
         job_manager=job_manager,
         events=events,
         people_service=people_service,
+        registry_path=registry_path,
     )
 
 

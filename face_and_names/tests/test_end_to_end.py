@@ -10,6 +10,7 @@ from face_and_names.app_context import AppContext, EventBus, initialize_app
 from face_and_names.models.db import initialize_database
 from face_and_names.services.ingest_service import IngestOptions, IngestService
 from face_and_names.services.people_service import PeopleService
+from face_and_names.services.person_registry import default_registry_path
 
 
 def _create_dummy_image(path: Path) -> None:
@@ -29,7 +30,8 @@ def test_e2e_ingest_to_person_assignment(tmp_path: Path) -> None:
     conn = initialize_database(db_path)
     from face_and_names.services.workers import JobManager
     job_manager = JobManager(max_workers=1)
-    people_service = PeopleService(conn)
+    registry_path = default_registry_path(db_root)
+    people_service = PeopleService(conn, registry_path=registry_path)
     
     context = AppContext(
         config={},
@@ -38,7 +40,8 @@ def test_e2e_ingest_to_person_assignment(tmp_path: Path) -> None:
         config_path=db_root / "config.toml",
         job_manager=job_manager,
         events=EventBus(),
-        people_service=people_service
+        people_service=people_service,
+        registry_path=registry_path,
     )
     
     # 2. Ingest
@@ -66,7 +69,7 @@ def test_e2e_ingest_to_person_assignment(tmp_path: Path) -> None:
     conn.commit()
     
     # 5. Create Person
-    people_service = PeopleService(conn)
+    people_service = PeopleService(conn, registry_path=registry_path)
     person_id = people_service.create_person("John", "Doe")
     
     # 6. Assign Person to Face (mimic UI action)

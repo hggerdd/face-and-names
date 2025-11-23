@@ -37,7 +37,6 @@ from face_and_names.services.clustering_service import (
     ClusteringService,
     ClusterResult,
 )
-from face_and_names.services.people_service import PeopleService
 from face_and_names.ui.components.face_tile import FaceTile, FaceTileData, PersonSelectDialog
 from face_and_names.ui.faces_page import FaceImageView
 
@@ -109,7 +108,7 @@ class ClusteringPage(QWidget):
     def __init__(self, context: AppContext) -> None:
         super().__init__()
         self.context = context
-        self.people_service = PeopleService(context.conn)
+        self.people_service = context.people_service
         self.face_repo = FaceRepository(context.conn)
         self.folder_list = QListWidget()
         self.folder_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)

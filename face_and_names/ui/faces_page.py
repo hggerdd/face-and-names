@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import List
 
 from face_and_names.models.repositories import FaceRepository
-from face_and_names.services.people_service import PeopleService
 from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QPen, QPixmap, QPainter
@@ -83,7 +82,7 @@ class FacesPage(QWidget):
     def __init__(self, context: AppContext) -> None:
         super().__init__()
         self.context = context
-        self.people_service = PeopleService(context.conn)
+        self.people_service = context.people_service
         self.face_repo = FaceRepository(context.conn)
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)

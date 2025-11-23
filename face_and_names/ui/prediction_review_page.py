@@ -28,7 +28,6 @@ from PyQt6.QtGui import QPixmap
 
 from face_and_names.app_context import AppContext
 from face_and_names.models.repositories import FaceRepository
-from face_and_names.services.people_service import PeopleService
 from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
 from face_and_names.ui.faces_page import FaceImageView
 
@@ -50,7 +49,7 @@ class PredictionReviewPage(QWidget):
     def __init__(self, context: AppContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.context = context
-        self.people_service = PeopleService(context.conn)
+        self.people_service = context.people_service
         self.face_repo = FaceRepository(context.conn)
         self.people_list = QListWidget()
         self.people_list.setFixedWidth(200)

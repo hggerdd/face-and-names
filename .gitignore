@@ -32,6 +32,9 @@ model/
 *.joblib
 *.pth
 
+# Person registry data
+persons/
+
 # Allow source code package under face_and_names/models (ignore only top-level artifacts above)
 !face_and_names/models/
 !face_and_names/models/**

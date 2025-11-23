@@ -255,7 +255,9 @@ class PredictionTrainingPage(QWidget):
         # Map person_id to display name
         name_map = {}
         try:
-            service = getattr(self.context, "people_service", None) or PeopleService(self.context.conn)
+            service = getattr(self.context, "people_service", None) or PeopleService(
+                self.context.conn, registry_path=getattr(self.context, "registry_path", None)
+            )
             for p in service.list_people():
                 name_map[p["id"]] = p.get("display_name") or p.get("primary_name")
         except Exception:
@@ -287,4 +289,3 @@ class PredictionTrainingPage(QWidget):
                 self.cm_table.item(r_idx, c_idx).setBackground(color)
         self.cm_table.resizeColumnsToContents()
         self.cm_table.setVisible(True)
-from face_and_names.services.prediction_apply import apply_predictions

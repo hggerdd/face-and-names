@@ -12,6 +12,7 @@ from face_and_names.app_context import AppContext, EventBus
 from face_and_names.models.db import initialize_database
 from face_and_names.models.repositories import ImageRepository, ImportSessionRepository
 from face_and_names.ui.faces_page import FacesPage, ImageRecord
+from face_and_names.services.person_registry import default_registry_path
 
 
 @pytest.fixture
@@ -33,7 +34,8 @@ def context(conn: sqlite3.Connection, db_path: Path) -> AppContext:
     
     # Mock job manager
     job_manager = JobManager(max_workers=1)
-    people_service = PeopleService(conn)
+    registry_path = default_registry_path(db_path.parent)
+    people_service = PeopleService(conn, registry_path=registry_path)
     
     return AppContext(
         config={},
@@ -42,7 +44,8 @@ def context(conn: sqlite3.Connection, db_path: Path) -> AppContext:
         config_path=db_path.parent / "config.toml",
         job_manager=job_manager,
         events=EventBus(),
-        people_service=people_service
+        people_service=people_service,
+        registry_path=registry_path,
     )
 
 

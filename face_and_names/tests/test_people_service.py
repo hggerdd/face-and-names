@@ -6,6 +6,7 @@ import pytest
 
 from face_and_names.models.db import initialize_database
 from face_and_names.services.people_service import PeopleService
+from face_and_names.services.person_registry import default_registry_path, PersonRegistry
 
 
 def _insert_import_and_image(conn, db_root: Path) -> int:
@@ -39,7 +40,8 @@ def _insert_import_and_image(conn, db_root: Path) -> int:
 
 def test_create_person_adds_aliases(tmp_path: Path) -> None:
     conn = initialize_database(tmp_path / "faces.db")
-    service = PeopleService(conn)
+    registry_path = default_registry_path(tmp_path)
+    service = PeopleService(conn, registry_path=registry_path)
 
     pid = service.create_person("Alice", "Doe", short_name="Ali", aliases=["Al", "A"])
     people = service.list_people()
@@ -47,12 +49,16 @@ def test_create_person_adds_aliases(tmp_path: Path) -> None:
     assert pid > 0
     assert people[0]["display_name"] == "Ali"
     assert {"name": "Al", "kind": "alias"} in people[0]["aliases"]
+    # Registry persisted to disk
+    reg = PersonRegistry(registry_path)
+    assert reg.get(pid).primary_name == "Ali"
 
 
 def test_merge_people_rebinds_faces_and_aliases(tmp_path: Path) -> None:
     conn = initialize_database(tmp_path / "faces.db")
     img_id = _insert_import_and_image(conn, tmp_path)
-    service = PeopleService(conn)
+    registry_path = default_registry_path(tmp_path)
+    service = PeopleService(conn, registry_path=registry_path)
 
     source = service.create_person("Person", "One", aliases=["P1"])
     target = service.create_person("Person", "Two", aliases=["P2"])
@@ -105,7 +111,8 @@ def test_merge_people_rebinds_faces_and_aliases(tmp_path: Path) -> None:
 
 def test_rename_person_updates_name(tmp_path: Path) -> None:
     conn = initialize_database(tmp_path / "faces.db")
-    service = PeopleService(conn)
+    registry_path = default_registry_path(tmp_path)
+    service = PeopleService(conn, registry_path=registry_path)
 
     pid = service.create_person("Old", "Name")
     service.rename_person(pid, "New", "Name", short_name="NN")
