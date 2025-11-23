@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _configure_connection(conn: sqlite3.Connection) -> None:
@@ -74,10 +74,28 @@ def initialize_database(db_path: Path) -> sqlite3.Connection:
         apply_schema(conn)
         _set_schema_version(conn, SCHEMA_VERSION)
     elif current_version < SCHEMA_VERSION:
-        # Placeholder for future migrations; none defined yet.
+        _migrate(conn, current_version, SCHEMA_VERSION)
         _set_schema_version(conn, SCHEMA_VERSION)
     elif current_version > SCHEMA_VERSION:
         raise RuntimeError(
             f"Database schema version {current_version} is newer than supported {SCHEMA_VERSION}"
         )
     return conn
+
+
+def _migrate(conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
+    """Apply incremental migrations up to `to_version`."""
+    version = from_version
+    if version < 2:
+        _ensure_face_detection_index_column(conn)
+        version = 2
+    if version != to_version:
+        raise RuntimeError(f"No migration path from {from_version} to {to_version}")
+
+
+def _ensure_face_detection_index_column(conn: sqlite3.Connection) -> None:
+    """Add face_detection_index column if missing (v1 -> v2)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(face)")}.copy()
+    if "face_detection_index" not in cols:
+        conn.execute("ALTER TABLE face ADD COLUMN face_detection_index REAL;")
+        conn.commit()

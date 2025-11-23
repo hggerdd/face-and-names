@@ -391,10 +391,11 @@ class IngestService:
                     bbox_abs=det.bbox_abs,
                     bbox_rel=det.bbox_rel,
                     face_crop_blob=crop_bytes,
+                    face_detection_index=det.confidence,
                     cluster_id=None,
                     person_id=None,
                     predicted_person_id=None,
-                    prediction_confidence=det.confidence,
+                    prediction_confidence=None,
                     provenance="detected",
                 )
                 stored += 1

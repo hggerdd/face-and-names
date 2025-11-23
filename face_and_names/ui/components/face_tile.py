@@ -331,6 +331,7 @@ class PersonSelectDialog(QDialog):
         self.selected_person_id: int | None = None
 
         self.list_widget = QListWidget()
+        self.list_widget.itemDoubleClicked.connect(self._accept_double_click)
         self._refresh_list()
 
         add_btn = QPushButton("Add")
@@ -356,12 +357,37 @@ class PersonSelectDialog(QDialog):
         self.resize(320, 360)
 
     def _refresh_list(self) -> None:
+        current_id = self._current_selected_person_id()
         self.list_widget.clear()
+        self.persons = sorted(self.persons, key=lambda p: self._person_label(p).casefold())
         for person in self.persons:
-            self.list_widget.addItem(f"{person['primary_name']} (ID {person['id']})")
+            self.list_widget.addItem(self._person_label(person))
+        if current_id is not None:
+            for idx, person in enumerate(self.persons):
+                if person.get("id") == current_id:
+                    self.list_widget.setCurrentRow(idx)
+                    break
 
     def _selected_index(self) -> int:
         return self.list_widget.currentRow()
+
+    def _current_selected_person_id(self) -> int | None:
+        idx = self._selected_index()
+        if idx >= 0 and idx < len(self.persons):
+            return self.persons[idx].get("id")
+        return None
+
+    @staticmethod
+    def _person_label(person: dict) -> str:
+        """Return display label with short name if present and full name in brackets."""
+        short = (person.get("short_name") or "").strip()
+        first = (person.get("first_name") or "").strip()
+        last = (person.get("last_name") or "").strip()
+        full = " ".join(filter(None, [first, last])).strip()
+        if short:
+            return f"{short} ({full})" if full else short
+        base = full or (person.get("display_name") or person.get("primary_name") or "")
+        return base or "(unnamed)"
 
     def _add_person(self) -> None:
         name, ok = QInputDialog.getText(self, "Add person", "Name:")
@@ -370,9 +396,22 @@ class PersonSelectDialog(QDialog):
         first, last = self._split_name(name.strip())
         pid = self.create_person_cb(first, last, None)
         display = name.strip()
-        self.persons.append({"id": pid, "primary_name": display, "display_name": display})
+        self.persons.append(
+            {
+                "id": pid,
+                "primary_name": display,
+                "display_name": display,
+                "first_name": first,
+                "last_name": last,
+                "short_name": None,
+            }
+        )
         self._refresh_list()
-        self.list_widget.setCurrentRow(len(self.persons) - 1)
+        # Select newly added person by ID (order may have changed).
+        for idx, person in enumerate(self.persons):
+            if person.get("id") == pid:
+                self.list_widget.setCurrentRow(idx)
+                break
 
     def _rename_person(self) -> None:
         idx = self._selected_index()
@@ -396,14 +435,24 @@ class PersonSelectDialog(QDialog):
         display = short_name.strip() or f"{first_name.strip()} {last_name.strip()}".strip()
         self.persons[idx]["primary_name"] = display
         self.persons[idx]["display_name"] = display
+        self.persons[idx]["first_name"] = first_name.strip()
+        self.persons[idx]["last_name"] = last_name.strip()
+        self.persons[idx]["short_name"] = short_name.strip() or None
         self._refresh_list()
-        self.list_widget.setCurrentRow(idx)
+        for new_idx, person in enumerate(self.persons):
+            if person.get("id") == pid:
+                self.list_widget.setCurrentRow(new_idx)
+                break
 
     def _accept(self) -> None:
         idx = self._selected_index()
         if idx >= 0 and idx < len(self.persons):
             self.selected_person_id = self.persons[idx]["id"]
         self.accept()
+
+    def _accept_double_click(self) -> None:
+        # Double-click acts as OK on the selected row.
+        self._accept()
 
     @staticmethod
     def _split_name(name: str) -> tuple[str, str]:

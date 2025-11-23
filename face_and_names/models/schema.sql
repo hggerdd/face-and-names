@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS face (
     bbox_rel_w REAL NOT NULL,
     bbox_rel_h REAL NOT NULL,
     face_crop_blob BLOB NOT NULL,
+    face_detection_index REAL,
     cluster_id INTEGER,
     person_id INTEGER REFERENCES person(id),
     predicted_person_id INTEGER REFERENCES person(id),

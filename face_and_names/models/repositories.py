@@ -115,6 +115,7 @@ class FaceRepository:
         self.conn = conn
         self._has_crop_path = self._column_exists("face", "face_crop_path")
         self._has_crop_blob = self._column_exists("face", "face_crop_blob")
+        self._has_detection_index = self._column_exists("face", "face_detection_index")
 
     def _column_exists(self, table: str, column: str) -> bool:
         cols = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
@@ -131,6 +132,7 @@ class FaceRepository:
         person_id: int | None = None,
         predicted_person_id: int | None = None,
         prediction_confidence: float | None = None,
+        face_detection_index: float | None = None,
     ) -> int:
         bx, by, bw, bh = bbox_abs
         brx, bry, brw, brh = bbox_rel
@@ -152,6 +154,9 @@ class FaceRepository:
         if self._has_crop_blob:
             columns.append("face_crop_blob")
             values.append(sqlite3.Binary(face_crop_blob))
+        if self._has_detection_index:
+            columns.append("face_detection_index")
+            values.append(face_detection_index)
         columns.extend(
             ["cluster_id", "person_id", "predicted_person_id", "prediction_confidence", "provenance"]
         )
