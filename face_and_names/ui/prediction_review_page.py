@@ -69,7 +69,7 @@ class PredictionReviewPage(QWidget):
         # Pagination controls
         self.prev_btn = QPushButton("<")
         self.next_btn = QPushButton(">")
-        self.page_label = QLabel("Page 1")
+        self.page_label = QLabel("Page 1/1")
         self.current_page = 0
 
         self.faces_area = QScrollArea()
@@ -94,22 +94,26 @@ class PredictionReviewPage(QWidget):
         filters.addWidget(self.max_conf)
         filters.addWidget(self.unnamed_only)
         filters.addStretch(1)
-        
-        # Pagination UI
-        filters.addWidget(self.prev_btn)
-        filters.addWidget(self.page_label)
-        filters.addWidget(self.next_btn)
-        
         filters.addWidget(self.refresh_btn)
         filters.addWidget(self.accept_btn)
+
+        # Pagination UI centered above images
+        pagination_layout = QHBoxLayout()
+        pagination_layout.addStretch(1)
+        pagination_layout.addWidget(self.prev_btn)
+        pagination_layout.addWidget(self.page_label)
+        pagination_layout.addWidget(self.next_btn)
+        pagination_layout.addStretch(1)
 
         main = QHBoxLayout()
         left = QVBoxLayout()
         left.addWidget(QLabel("Names"))
         left.addWidget(self.people_list)
         main.addLayout(left)
+        
         right = QVBoxLayout()
         right.addLayout(filters)
+        right.addLayout(pagination_layout)
         right.addWidget(self.faces_area, stretch=1)
         right.addWidget(self.status_label)
         main.addLayout(right, stretch=1)
@@ -194,31 +198,53 @@ class PredictionReviewPage(QWidget):
             if widget:
                 widget.deleteLater()
 
+    def _build_filter_query(self, predicted_person_id: int | None) -> tuple[str, list]:
+        params = []
+        filters = ["f.predicted_person_id IS NOT NULL"]
+        if predicted_person_id is not None:
+            filters.append("f.predicted_person_id = ?")
+            params.append(predicted_person_id)
+        if self.unnamed_only.isChecked():
+            filters.append("f.person_id IS NULL")
+        min_c = float(self.min_conf.value())
+        max_c = float(self.max_conf.value())
+        filters.append("COALESCE(f.prediction_confidence, 0) BETWEEN ? AND ?")
+        params.extend([min_c, max_c])
+        return " AND ".join(filters), params
+
+    def _count_total_faces(self, predicted_person_id: int | None) -> int:
+        where, params = self._build_filter_query(predicted_person_id)
+        row = self.context.conn.execute(
+            f"SELECT COUNT(*) FROM face f WHERE {where}", params
+        ).fetchone()
+        return row[0] if row else 0
+
     def _load_faces(self) -> None:
         self._clear_faces()
         pid = self._selected_person_id()
         
+        total_count = self._count_total_faces(pid)
+        total_pages = max(1, (total_count + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        
+        # Clamp current page
+        if self.current_page >= total_pages:
+            self.current_page = max(0, total_pages - 1)
+            
         offset = self.current_page * self.PAGE_SIZE
-        # Fetch one extra to check if there is a next page
-        limit = self.PAGE_SIZE + 1
-        
-        rows = self._fetch_faces(predicted_person_id=pid, limit=limit, offset=offset)
-        
-        has_next = len(rows) > self.PAGE_SIZE
-        display_rows = rows[:self.PAGE_SIZE]
+        rows = self._fetch_faces(predicted_person_id=pid, limit=self.PAGE_SIZE, offset=offset)
         
         # Update pagination UI
-        self.page_label.setText(f"Page {self.current_page + 1}")
+        self.page_label.setText(f"{self.current_page + 1}/{total_pages}")
         self.prev_btn.setEnabled(self.current_page > 0)
-        self.next_btn.setEnabled(has_next)
+        self.next_btn.setEnabled(self.current_page < total_pages - 1)
         
-        if not display_rows:
+        if not rows:
             self.status_label.setText("No predictions to review.")
             return
 
         people = {p["id"]: p for p in self.people_service.list_people()}
         max_cols = 4
-        for idx, row in enumerate(display_rows):
+        for idx, row in enumerate(rows):
             tile = FaceTile(
                 FaceTileData(
                     face_id=row.face_id,
@@ -242,22 +268,10 @@ class PredictionReviewPage(QWidget):
             row_idx, col_idx = divmod(idx, max_cols)
             self.faces_layout.addWidget(tile, row_idx, col_idx, alignment=Qt.AlignmentFlag.AlignTop)
             self.current_tiles.append(tile)
-        self.status_label.setText(f"Showing {len(display_rows)} faces")
+        self.status_label.setText(f"Showing {len(rows)} faces (Total: {total_count})")
 
     def _fetch_faces(self, predicted_person_id: int | None, limit: int, offset: int) -> List[FaceRow]:
-        params = []
-        filters = ["f.predicted_person_id IS NOT NULL"]
-        if predicted_person_id is not None:
-            filters.append("f.predicted_person_id = ?")
-            params.append(predicted_person_id)
-        if self.unnamed_only.isChecked():
-            filters.append("f.person_id IS NULL")
-        min_c = float(self.min_conf.value())
-        max_c = float(self.max_conf.value())
-        filters.append("COALESCE(f.prediction_confidence, 0) BETWEEN ? AND ?")
-        params.extend([min_c, max_c])
-        
-        where = " AND ".join(filters)
+        where, params = self._build_filter_query(predicted_person_id)
         
         # Add LIMIT and OFFSET
         params.append(limit)

@@ -66,7 +66,7 @@ def test_pagination_logic(qtbot, mock_context):
     # Should show first 20 items
     assert len(page.current_tiles) == 20
     assert page.current_page == 0
-    assert page.page_label.text() == "Page 1"
+    assert page.page_label.text() == "1/2"
     assert page.prev_btn.isEnabled() is False
     assert page.next_btn.isEnabled() is True
     
@@ -76,7 +76,7 @@ def test_pagination_logic(qtbot, mock_context):
     # Should show remaining 5 items
     assert len(page.current_tiles) == 5
     assert page.current_page == 1
-    assert page.page_label.text() == "Page 2"
+    assert page.page_label.text() == "2/2"
     assert page.prev_btn.isEnabled() is True
     assert page.next_btn.isEnabled() is False
     
@@ -103,4 +103,32 @@ def test_filter_resets_pagination(qtbot, mock_context):
     
     # Should reset to page 1
     assert page.current_page == 0
-    assert page.page_label.text() == "Page 1"
+    assert page.page_label.text() == "1/2"
+
+def test_deletion_updates_pagination(qtbot, mock_context):
+    page = PredictionReviewPage(mock_context)
+    qtbot.addWidget(page)
+    
+    page.people_service.list_people = MagicMock(return_value=[{"id": 1, "primary_name": "Alice"}])
+    page.refresh_data()
+    page.people_list.setCurrentRow(0)
+    
+    # Initial state: 25 items -> 2 pages
+    assert page.page_label.text() == "1/2"
+    
+    # Mock deletion: delete 6 items from DB
+    # We need to manually update the mock DB because the UI calls delete on repo which commits
+    # But our mock_context has an in-memory DB. 
+    # The UI calls self.face_repo.delete(face_id).
+    # We can just manually delete from the DB since the UI reloads from DB.
+    
+    # Delete 6 faces
+    mock_context.conn.execute("DELETE FROM face WHERE id IN (SELECT id FROM face LIMIT 6)")
+    mock_context.conn.commit()
+    
+    # Trigger reload (simulate delete callback)
+    page._load_faces()
+    
+    # Now 19 items -> 1 page
+    assert page.page_label.text() == "1/1"
+    assert page.next_btn.isEnabled() is False
