@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Iterable, List, Sequence
 import logging
+from pathlib import Path
+import urllib.request
 
 import imagehash
 import numpy as np
@@ -17,6 +19,15 @@ import torch
 from facenet_pytorch import InceptionResnetV1
 
 LOGGER = logging.getLogger(__name__)
+
+ARCFACE_MODEL_NAME = "arcface_r100_v1.onnx"
+ARCFACE_MODEL_URLS = [
+    "https://github.com/deepinsight/insightface_model_zoo/raw/master/arcface_r100_v1.onnx",
+    "https://github.com/deepinsight/insightface/releases/download/v2.0/arcface_r100_v1.onnx",
+    "https://github.com/deepinsight/insightface/releases/download/v2.1/arcface_r100_v1.onnx",
+    "https://github.com/deepinsight/insightface/releases/download/v0.0/arcface_r100_v1.onnx",
+    "https://github.com/deepinsight/insightface/releases/download/v1.0/arcface_r100_v1.onnx",
+]
 
 
 @dataclass
@@ -57,6 +68,8 @@ class ClusteringService:
         self._embed_model: InceptionResnetV1 | None = None
         self._arcface_model = None
         self._arcface_recognizer = None
+        self._arcface_session = None
+        self._arcface_io: tuple[str, str] | None = None
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def cluster_faces(self, options: ClusteringOptions | None = None) -> List[ClusterResult]:
@@ -217,74 +230,64 @@ class ClusteringService:
             LOGGER.warning("ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc)
             return self._embedding_vector(img, opts)
 
-        if self._arcface_recognizer is None:
-            if not self._load_arcface_model():
+        if self._arcface_session is None:
+            if not self._load_arcface_onnx():
                 return self._embedding_vector(img, opts)
 
         proc = img.convert("RGB").resize((112, 112), Image.Resampling.BILINEAR)
-        arr = _np.asarray(proc, dtype=_np.float32)
-        arr = arr[:, :, ::-1]  # RGB -> BGR as expected by insightface
+        arr = np.asarray(proc, dtype=np.float32)
+        arr = (arr - 127.5) / 128.0
+        arr = np.transpose(arr, (2, 0, 1))  # CHW
+        arr = arr.reshape(1, 3, 112, 112)
         try:
-            if hasattr(self._arcface_recognizer, "get_embedding"):
-                emb = self._arcface_recognizer.get_embedding(arr)
-            elif hasattr(self._arcface_recognizer, "get"):
-                emb = self._arcface_recognizer.get(arr)
-            else:  # pragma: no cover - defensive
-                raise RuntimeError("ArcFace recognizer missing embedding method")
+            inp, out = self._arcface_io or ("data", "fc1")
+            res = self._arcface_session.run([out], {inp: arr})
+            emb = res[0][0]
         except Exception as exc:  # pragma: no cover
-            LOGGER.warning("ArcFace embedding failed: %s; using FaceNet", exc)
+            LOGGER.warning("ArcFace ONNX embedding failed: %s; using FaceNet", exc)
             return self._embedding_vector(img, opts)
-        vec = _np.asarray(emb).reshape(-1)
+        vec = np.asarray(emb, dtype=np.float32).reshape(-1)
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
         return vec
 
-    def _load_arcface_model(self) -> bool:
-        """
-        Try to load an ArcFace ONNX model. Returns True on success, False on fallback.
-        Prefers model_zoo arcface_r100_v1; falls back to FaceAnalysis('antelopev2').
-        """
+    def _load_arcface_onnx(self) -> bool:
+        """Load ArcFace ONNX model via onnxruntime; returns True on success."""
         try:
-            import insightface  # type: ignore
-        except Exception as exc:  # pragma: no cover - optional dependency
-            LOGGER.warning("ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc)
+            import onnxruntime as ort  # type: ignore
+        except Exception as exc:
+            LOGGER.warning("ArcFace ONNX runtime missing: %s; using FaceNet", exc)
             return False
 
-        # Try direct model_zoo first
+        model_path = Path(ARCFACE_MODEL_NAME)
+        if not model_path.exists():
+            if not self._download_arcface_model(model_path):
+                return False
+
+        providers = ["CPUExecutionProvider"]
         try:
-            from insightface.model_zoo import get_model  # type: ignore
-
-            model = get_model("arcface_r100_v1")
-            if model and hasattr(model, "prepare"):
-                model.prepare(ctx_id=-1)
-                self._arcface_model = model
-                self._arcface_recognizer = model
-                return True
-            LOGGER.info("arcface_r100_v1 not available from model_zoo, trying FaceAnalysis")
-        except Exception as exc:  # pragma: no cover
-            LOGGER.info("ArcFace model_zoo load failed: %s; trying FaceAnalysis", exc)
-
-        # Fallback to FaceAnalysis recognition model (e.g., antelopev2 bundle)
-        try:
-            from insightface.app import FaceAnalysis  # type: ignore
-
-            app = FaceAnalysis(name="antelopev2", providers=["CPUExecutionProvider"])
-            app.prepare(ctx_id=-1)
-            recog = app.models.get("recognition") if hasattr(app, "models") else None
-            if recog is None and hasattr(app, "get"):
-                try:
-                    recog = app.get("recognition")  # type: ignore[attr-defined]
-                except Exception:
-                    recog = None
-            if recog is None:
-                raise RuntimeError("No recognition model in FaceAnalysis bundle")
-            self._arcface_model = app
-            self._arcface_recognizer = recog
+            session = ort.InferenceSession(str(model_path), providers=providers)
+            inp = session.get_inputs()[0].name
+            out = session.get_outputs()[0].name
+            self._arcface_session = session
+            self._arcface_io = (inp, out)
             return True
-        except Exception as exc:  # pragma: no cover
-            LOGGER.warning("ArcFace FaceAnalysis prepare failed: %s; using FaceNet", exc)
+        except Exception as exc:
+            LOGGER.warning("ArcFace ONNX load failed: %s; using FaceNet", exc)
             return False
+
+    def _download_arcface_model(self, path: Path) -> bool:
+        for url in ARCFACE_MODEL_URLS:
+            try:
+                LOGGER.info("Downloading ArcFace model from %s", url)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                urllib.request.urlretrieve(url, path)
+                return True
+            except Exception as exc:
+                LOGGER.warning("Download failed from %s: %s", url, exc)
+        LOGGER.error("All ArcFace model downloads failed; place %s manually", path)
+        return False
 
     def _run_dbscan(self, X: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
         if len(X) == 1:
