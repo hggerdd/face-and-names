@@ -56,6 +56,7 @@ class ClusteringService:
         self.conn = conn
         self._embed_model: InceptionResnetV1 | None = None
         self._arcface_model = None
+        self._arcface_recognizer = None
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def cluster_faces(self, options: ClusteringOptions | None = None) -> List[ClusterResult]:
@@ -216,27 +217,20 @@ class ClusteringService:
             LOGGER.warning("ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc)
             return self._embedding_vector(img, opts)
 
-        if self._arcface_model is None:
-            try:
-                from insightface.model_zoo import get_model  # type: ignore
-            except Exception as exc:  # pragma: no cover
-                LOGGER.warning("ArcFace model load failed: %s; using FaceNet", exc)
-                return self._embedding_vector(img, opts)
-            try:
-                model = get_model("arcface_r100_v1")
-                if model is None or not hasattr(model, "prepare"):
-                    raise RuntimeError("arcface_r100_v1 model unavailable")
-                model.prepare(ctx_id=-1)
-                self._arcface_model = model
-            except Exception as exc:  # pragma: no cover
-                LOGGER.warning("ArcFace model prepare failed: %s; using FaceNet", exc)
+        if self._arcface_recognizer is None:
+            if not self._load_arcface_model():
                 return self._embedding_vector(img, opts)
 
         proc = img.convert("RGB").resize((112, 112), Image.Resampling.BILINEAR)
         arr = _np.asarray(proc, dtype=_np.float32)
         arr = arr[:, :, ::-1]  # RGB -> BGR as expected by insightface
         try:
-            emb = self._arcface_model.get_embedding(arr)
+            if hasattr(self._arcface_recognizer, "get_embedding"):
+                emb = self._arcface_recognizer.get_embedding(arr)
+            elif hasattr(self._arcface_recognizer, "get"):
+                emb = self._arcface_recognizer.get(arr)
+            else:  # pragma: no cover - defensive
+                raise RuntimeError("ArcFace recognizer missing embedding method")
         except Exception as exc:  # pragma: no cover
             LOGGER.warning("ArcFace embedding failed: %s; using FaceNet", exc)
             return self._embedding_vector(img, opts)
@@ -245,6 +239,52 @@ class ClusteringService:
         if norm > 0:
             vec = vec / norm
         return vec
+
+    def _load_arcface_model(self) -> bool:
+        """
+        Try to load an ArcFace ONNX model. Returns True on success, False on fallback.
+        Prefers model_zoo arcface_r100_v1; falls back to FaceAnalysis('antelopev2').
+        """
+        try:
+            import insightface  # type: ignore
+        except Exception as exc:  # pragma: no cover - optional dependency
+            LOGGER.warning("ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc)
+            return False
+
+        # Try direct model_zoo first
+        try:
+            from insightface.model_zoo import get_model  # type: ignore
+
+            model = get_model("arcface_r100_v1")
+            if model and hasattr(model, "prepare"):
+                model.prepare(ctx_id=-1)
+                self._arcface_model = model
+                self._arcface_recognizer = model
+                return True
+            LOGGER.info("arcface_r100_v1 not available from model_zoo, trying FaceAnalysis")
+        except Exception as exc:  # pragma: no cover
+            LOGGER.info("ArcFace model_zoo load failed: %s; trying FaceAnalysis", exc)
+
+        # Fallback to FaceAnalysis recognition model (e.g., antelopev2 bundle)
+        try:
+            from insightface.app import FaceAnalysis  # type: ignore
+
+            app = FaceAnalysis(name="antelopev2", providers=["CPUExecutionProvider"])
+            app.prepare(ctx_id=-1)
+            recog = app.models.get("recognition") if hasattr(app, "models") else None
+            if recog is None and hasattr(app, "get"):
+                try:
+                    recog = app.get("recognition")  # type: ignore[attr-defined]
+                except Exception:
+                    recog = None
+            if recog is None:
+                raise RuntimeError("No recognition model in FaceAnalysis bundle")
+            self._arcface_model = app
+            self._arcface_recognizer = recog
+            return True
+        except Exception as exc:  # pragma: no cover
+            LOGGER.warning("ArcFace FaceAnalysis prepare failed: %s; using FaceNet", exc)
+            return False
 
     def _run_dbscan(self, X: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
         if len(X) == 1:
