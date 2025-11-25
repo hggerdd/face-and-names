@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Sequence, Tuple
 
-from ultralytics import YOLO
-
 
 @dataclass
 class FaceDetection:
@@ -27,12 +25,19 @@ class DetectorAdapter:
     def __init__(self, weights_path: Path, device: str | None = None) -> None:
         self.weights_path = Path(weights_path)
         self.device = device
-        self._model: YOLO | None = None
+        self._model: Any | None = None
 
     def load(self) -> None:
         """Load YOLO model from weights path."""
         if not self.weights_path.exists():
             raise FileNotFoundError(f"Detector weights not found: {self.weights_path}")
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:
+            raise ImportError(
+                "ultralytics/cv2 not available. Install opencv-python and ultralytics (uv sync) to enable detection."
+            ) from exc
+
         self._model = YOLO(str(self.weights_path))
 
     def detect_batch(self, images: Sequence[Any]) -> List[List[FaceDetection]]:
