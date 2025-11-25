@@ -31,6 +31,7 @@ models/
 model/
 *.joblib
 *.pth
+*.onnx
 
 # Person registry data
 persons/
@@ -42,3 +43,6 @@ face_and_names/models/__pycache__/
 
 # yolo model pretrained (is it allowed?)
 yolov11n-face.pt
+
+# Wheels
+*.whl
