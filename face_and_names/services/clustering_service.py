@@ -22,6 +22,8 @@ LOGGER = logging.getLogger(__name__)
 
 ARCFACE_MODEL_NAME = "arcface_r100_v1.onnx"
 ARCFACE_MODEL_URLS = [
+    # ONNX model zoo (ArcFace ResNet100)
+    "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/arcface/model/arcfaceresnet100-8.onnx",
     "https://github.com/deepinsight/insightface_model_zoo/raw/master/arcface_r100_v1.onnx",
     "https://github.com/deepinsight/insightface/releases/download/v2.0/arcface_r100_v1.onnx",
     "https://github.com/deepinsight/insightface/releases/download/v2.1/arcface_r100_v1.onnx",
