@@ -8,6 +8,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 ## 2. Definitions and Glossary
 - **DB Root**: Folder containing the database file; defines the scope of eligible images (DB root and all subfolders). **[REQ]**
 - **Person ID**: Internal, stable identifier for a person; models operate on IDs (not names). **[REQ]**
+- **Person Registry**: Canonical store of Person IDs/names/aliases kept in a shared registry file (e.g., `persons/persons.json`) outside the DB; SQLite mirrors this registry on open. **[DER]**
 - **People Record**: User-facing attributes for a Person ID (first name, last name, optional short_name, primary_name for display, aliases/short names, optional birthdate, notes). **[REQ]**
   - Display uses short_name when present; otherwise combine first + last name. Person ID remains stable across renames.
 - **Face Tile**: Reusable UI component showing a face crop, current name, predicted name + confidence, delete control, right-click preview. **[REQ]**
@@ -43,7 +44,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 ### 4.2 Detection and Recognition
 - **FR-010** The system shall detect faces in each image using a detector that supports padded, clamped bounding boxes, storing both absolute and relative coordinates. **[REQ][LEG]**
 - **FR-011** The system shall save face crops as JPEG and link them to their source image. **[REQ][LEG]**
-- **FR-012** The system shall optionally run inline recognition via the shared prediction service during ingest and persist predicted person ID and confidence when above a configurable threshold. **[REQ][LEG]**
+- **FR-012** The system shall optionally run inline recognition via the shared prediction service during ingest and persist predicted person ID and confidence when above a configurable threshold, falling back cleanly when no model is available. **[REQ][LEG]**
 - **FR-013** The system shall reuse detector/model instances within a batch to minimize reload overhead. **[REQ]**
 
 ### 4.3 Browsing and Annotation
@@ -54,7 +55,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 
 ### 4.4 Clustering
 - **FR-018** The system shall load faces for clustering filtered by “latest import only” and/or selected folders. **[REQ]**
-- **FR-019** The system shall support clustering algorithms (DBSCAN, KMeans, Hierarchical) with user-adjustable parameters and selectable face-recognition backbone. **[REQ]**
+- **FR-019** The system shall support clustering algorithms (DBSCAN, KMeans, Hierarchical) with user-adjustable parameters and selectable feature source (pHash, raw, FaceNet embedding, ArcFace ONNX embedding with fallback to FaceNet if unavailable). **[REQ]**
 - **FR-020** The system shall assign cluster IDs to faces, persist them, and post-process to split oversized clusters and renumber sequentially (handling noise explicitly). **[REQ]**
 - **FR-021** The system shall provide clustering progress and statistics (e.g., noise count, cluster size distribution) with cancellation. **[REQ]**
 - **FR-022** The system shall allow clearing all names and/or cluster assignments in bulk. **[REQ]**
@@ -94,10 +95,11 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 ### 4.10 People Management
 - **FR-045** The system shall provide a dedicated People Management page for CRUD on Person IDs, including primary name, aliases/short names, optional birthdate, and notes. **[REQ]**
 - **FR-046** The system shall support merging two or more Person IDs into one, updating all linked faces/images. **[REQ]**
-- **FR-047** Updating a person’s display name or aliases shall not require model retraining; model outputs remain Person IDs. **[REQ]**
+- **FR-047** Updating a person's display name or aliases shall not require model retraining; model outputs remain Person IDs. **[REQ]**
 - **FR-068** The People Management page shall support CRUD for reusable groups/tags (e.g., Family, Study Friends) and assign multiple groups to each Person ID. **[DER]**
 - **FR-069** The system shall support hierarchical groups (parent/child) such that a parent group (e.g., Family) can contain subgroups (e.g., Near Family, Extended Family), and membership in a child implies membership in its parent. **[DER]**
 - **FR-070** The Faces workspace filters shall include group/tag selection (multi-select) to scope faces by group membership. **[DER]**
+- **FR-093** The system shall persist a shared person registry file (IDs/names/aliases) outside the DB, mirror it into SQLite on load, and propagate person edits/merges back to the registry to keep IDs stable across DB Roots. **[DER]**
 
 ### 4.11 Diagnostics
 - **FR-048** The system shall present a diagnostics panel showing model presence/health, DB health, cache stats, and device selection (CPU/GPU). **[REQ]**
@@ -173,13 +175,14 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **BR-005** Primary names shall be unique per DB Root; alias collisions shall prompt user resolution, and merges shall preserve or reconcile aliases. **[DER]**
 - **BR-006** Rename/merge/delete/accept-prediction actions shall be audit logged with timestamp and actor to support traceability. **[DER]**
 - **BR-007** Person IDs may belong to multiple groups/tags simultaneously; group hierarchy implies inheritance of membership from child to parent. **[DER]**
+- **BR-008** The person registry file is the authoritative store of Person IDs/names/aliases; SQLite tables mirror it on load and propagate changes back to the registry. **[DER]**
 
 ## 7. Data / Information Model (Conceptual)
 - **Image**: relative_path, sub_folder, filename, identity (hash/perceptual), dimensions/size, import_id, has_faces, thumbnail BLOB, metadata entries. **[REQ]**
 - **Face**: image_id, face_crop BLOB, bbox_abs, bbox_rel, cluster_id, person_id (nullable), predicted_person_id (nullable), prediction_confidence (nullable), provenance (manual/predicted). **[REQ]**
 - **Import Session**: import_id, import_date, folder_count, image_count. **[REQ]**
 - **Metadata**: image_id, key, type (EXIF/IPTC), value. **[REQ]**
-- **Person**: person_id, primary_name, aliases/short_names, birthdate (optional), notes. **[REQ]**
+- **Person**: person_id, primary_name, aliases/short_names, birthdate (optional), notes; synchronized with the external person registry file for cross-DB consistency. **[REQ]**
 - **Group**: group_id, name, parent_group_id (nullable), description/tag color. **[DER]**
 - **PersonGroup**: person_id, group_id (many-to-many). **[DER]**
 - **Stats**: computed aggregates for Data Insights. **[REQ]**
