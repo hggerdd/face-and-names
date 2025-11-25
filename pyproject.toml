@@ -20,6 +20,9 @@ dependencies = [
   "torchvision==0.17.2+cpu",
   "facenet-pytorch==2.6.0",
   "ultralytics==8.3.10",
+  "ruff>=0.14.5",
+  "onnxruntime>=1.23.2",
+  "opencv-python>=4.11.0.86",
 ]
 
 [project.optional-dependencies]
@@ -45,7 +48,7 @@ torch = { index = "pytorch-cpu" }
 torchvision = { index = "pytorch-cpu" }
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 extend-select = ["I"]  # import sorting
 
