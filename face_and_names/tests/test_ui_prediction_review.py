@@ -47,6 +47,7 @@ def mock_context():
     context = MagicMock(spec=AppContext)
     context.conn = conn
     context.db_path = MagicMock()
+    context.people_service = MagicMock()
     return context
 
 
