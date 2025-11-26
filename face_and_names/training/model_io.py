@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 import joblib
 
-from face_and_names.training.embedding import EmbeddingConfig, FacenetEmbedder, EmbeddingModel
+from face_and_names.training.embedding import EmbeddingConfig, EmbeddingModel, FacenetEmbedder
 
 logger = logging.getLogger(__name__)
 

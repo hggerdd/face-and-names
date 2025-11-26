@@ -7,12 +7,13 @@ is intentionally simple (`embed_images -> np.ndarray`) to allow test doubles.
 
 from __future__ import annotations
 
-import numpy as np
-import torch
 from dataclasses import dataclass
 from typing import List, Protocol
-from PIL import Image
+
+import numpy as np
+import torch
 from facenet_pytorch import InceptionResnetV1
+from PIL import Image
 
 
 @dataclass

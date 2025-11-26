@@ -6,8 +6,8 @@ This is modular so it can be invoked from UI or from other workflows (e.g., impo
 
 from __future__ import annotations
 
-from typing import Callable
 import sqlite3
+from typing import Callable
 
 from face_and_names.models.repositories import FaceRepository
 from face_and_names.services.prediction_service import PredictionService

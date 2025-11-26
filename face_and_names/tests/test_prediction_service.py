@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-import pytest
+
 import numpy as np
+import pytest
 from PIL import Image
+
 from face_and_names.services.prediction_service import PredictionService
 from face_and_names.training.model_io import ModelBundle
+
 
 @pytest.fixture
 def mock_bundle():

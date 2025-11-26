@@ -5,9 +5,10 @@ Imaging utilities scaffold: EXIF orientation, thumbnailing, metadata extraction.
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any, Mapping
+from typing import Mapping
 
-from PIL import Image, ImageOps, ExifTags
+from PIL import ExifTags, Image, ImageOps
+
 
 def normalize_orientation(image_bytes: bytes) -> bytes:
     """Apply EXIF orientation; return normalized bytes."""

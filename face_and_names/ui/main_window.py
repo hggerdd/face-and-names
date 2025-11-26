@@ -10,14 +10,14 @@ from typing import Callable, Dict
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QStackedWidget,
-    QWidget,
-    QHBoxLayout,
     QVBoxLayout,
+    QWidget,
 )
 
 from face_and_names.app_context import AppContext

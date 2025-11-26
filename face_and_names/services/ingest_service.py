@@ -19,10 +19,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Sequence
 
 import imagehash
-from PIL import Image, ImageOps, ExifTags
+from PIL import ExifTags, Image, ImageOps
 
 from face_and_names.models.repositories import (
     FaceRepository,

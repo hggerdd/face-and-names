@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-ultralytics = pytest.importorskip("ultralytics")
-
 from face_and_names.services.detector_adapter import DetectorAdapter
+
+pytest.importorskip("ultralytics")
 
 
 def test_load_raises_when_weights_missing(tmp_path: Path) -> None:

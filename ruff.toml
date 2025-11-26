@@ -1,0 +1,26 @@
+target-version = "py312"
+line-length = 100
+
+extend-exclude = [
+  ".venv",
+  "face_recognition_models",
+  "logs",
+  "model",
+  "persons",
+  "scripts/*.onnx",
+  "arcface_r100_v1.onnx",
+  "faces.db",
+  "yolov11n-face.pt",
+]
+
+[lint]
+# Keep default rule set and add import sorting.
+extend-select = ["I"]
+
+[format]
+indent-style = "space"
+quote-style = "double"
+line-ending = "lf"
+
+[lint.pydocstyle]
+convention = "google"

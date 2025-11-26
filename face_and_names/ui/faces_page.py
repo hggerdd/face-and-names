@@ -7,11 +7,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-from face_and_names.models.repositories import FaceRepository
-from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QBrush, QColor, QPen, QPixmap, QPainter
+from PyQt6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+    QDialog,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
     QGraphicsScene,
@@ -20,7 +19,9 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -28,12 +29,11 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
-    QScrollArea,
-    QDialog,
-    QMessageBox,
 )
 
 from face_and_names.app_context import AppContext
+from face_and_names.models.repositories import FaceRepository
+from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
 
 
 @dataclass

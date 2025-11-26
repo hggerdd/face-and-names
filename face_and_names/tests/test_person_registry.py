@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+
 import pytest
-from face_and_names.services.person_registry import PersonRegistry, PersonRecord
+
+from face_and_names.services.person_registry import PersonRegistry
+
 
 @pytest.fixture
 def registry_file(tmp_path):

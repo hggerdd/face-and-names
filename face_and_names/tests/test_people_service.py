@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from face_and_names.models.db import initialize_database
 from face_and_names.services.people_service import PeopleService
-from face_and_names.services.person_registry import default_registry_path, PersonRegistry
+from face_and_names.services.person_registry import PersonRegistry, default_registry_path
 
 
 def _insert_import_and_image(conn, db_root: Path) -> int:

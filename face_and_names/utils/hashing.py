@@ -13,6 +13,7 @@ from PIL import Image
 
 from face_and_names.utils.imaging import normalize_orientation
 
+
 def compute_content_hash(path: Path) -> bytes:
     """Compute SHA-256 over normalized image bytes (TODO: implement EXIF orientation handling)."""
     normalized = normalize_orientation(path.read_bytes())

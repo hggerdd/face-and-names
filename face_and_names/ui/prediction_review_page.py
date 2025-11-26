@@ -5,12 +5,13 @@ Prediction Review page: fast verification of predicted names.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import List
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QDoubleSpinBox,
     QGridLayout,
     QHBoxLayout,
@@ -22,9 +23,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QVBoxLayout,
     QWidget,
-    QDialog,
 )
-from PyQt6.QtGui import QPixmap
 
 from face_and_names.app_context import AppContext
 from face_and_names.models.repositories import FaceRepository
@@ -241,7 +240,6 @@ class PredictionReviewPage(QWidget):
             self.status_label.setText("No predictions to review.")
             return
 
-        people = {p["id"]: p for p in self.people_service.list_people()}
         max_cols = 4
         for idx, row in enumerate(rows):
             tile = FaceTile(

@@ -5,7 +5,7 @@ Settings page with utilities, including DB reset that preserves people/groups.
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget, QPushButton, QMessageBox
+from PyQt6.QtWidgets import QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from face_and_names.app_context import AppContext
 from face_and_names.services.data_reset import reset_image_data

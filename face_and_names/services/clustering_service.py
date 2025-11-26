@@ -4,19 +4,19 @@ Clustering service implementation using perceptual hashes of face crops.
 
 from __future__ import annotations
 
+import logging
+import urllib.request
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Iterable, List, Sequence
-import logging
 from pathlib import Path
-import urllib.request
+from typing import Iterable, List, Sequence
 
 import imagehash
 import numpy as np
-from PIL import Image, ImageOps
-from sklearn.cluster import DBSCAN, KMeans
 import torch
 from facenet_pytorch import InceptionResnetV1
+from PIL import Image, ImageOps
+from sklearn.cluster import DBSCAN, KMeans
 
 LOGGER = logging.getLogger(__name__)
 
@@ -226,8 +226,7 @@ class ClusteringService:
         Requires `insightface`; falls back to FaceNet embedding if unavailable.
         """
         try:
-            import numpy as _np
-            import insightface  # type: ignore
+            pass  # type: ignore
         except Exception as exc:  # pragma: no cover - optional dependency
             LOGGER.warning("ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc)
             return self._embedding_vector(img, opts)

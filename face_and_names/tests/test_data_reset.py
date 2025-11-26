@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-import pytest
+from unittest.mock import MagicMock
+
 from face_and_names.services.data_reset import reset_image_data
+
 
 def test_reset_image_data():
     conn = MagicMock()

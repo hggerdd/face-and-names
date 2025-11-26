@@ -6,8 +6,8 @@ from face_and_names import app_context
 from face_and_names.app_context import (
     AppContext,
     initialize_app,
-    load_last_folder,
     load_last_db_path,
+    load_last_folder,
     resolve_db_path,
     save_last_db_path,
     save_last_folder,

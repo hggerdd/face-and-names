@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Callable, List
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex
+from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,

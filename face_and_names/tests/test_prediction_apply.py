@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import sqlite3
 from unittest.mock import MagicMock
+
 import pytest
+
 from face_and_names.services.prediction_apply import apply_predictions
 from face_and_names.services.prediction_service import PredictionService
+
 
 @pytest.fixture
 def db():

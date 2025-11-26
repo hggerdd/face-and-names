@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 from PIL import Image
 from sklearn.neighbors import KNeighborsClassifier
 
 from face_and_names.models.db import initialize_database
+from face_and_names.services.prediction_service import PredictionService
 from face_and_names.training.data_loader import load_verified_faces
 from face_and_names.training.model_io import load_artifacts
 from face_and_names.training.trainer import TrainingConfig, train_model_from_db
-from face_and_names.services.prediction_service import PredictionService
 
 
 def _make_image_bytes(color: str) -> bytes:

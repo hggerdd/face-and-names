@@ -9,28 +9,27 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
-    QProgressBar,
-    QHBoxLayout,
-    QWidget,
-    QMessageBox,
     QCheckBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from face_and_names.app_context import AppContext
-from face_and_names.training.trainer import TrainingConfig, train_model_from_db
-from face_and_names.services.prediction_service import PredictionService
-from face_and_names.services.prediction_apply import apply_predictions
 from face_and_names.models.db import connect
 from face_and_names.services.people_service import PeopleService
-from face_and_names.models.repositories import FaceRepository
+from face_and_names.services.prediction_apply import apply_predictions
+from face_and_names.services.prediction_service import PredictionService
+from face_and_names.training.trainer import TrainingConfig, train_model_from_db
 
 
 class TrainingWorker(QThread):

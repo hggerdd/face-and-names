@@ -8,28 +8,26 @@ import threading
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
+from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QPushButton,
-    QFileDialog,
-    QCheckBox,
-    QLabel,
-    QVBoxLayout,
-    QHBoxLayout,
-    QWidget,
-    QLineEdit,
     QMessageBox,
-    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtGui import QPixmap
 
 from face_and_names.app_context import (
     AppContext,
     initialize_app,
     load_last_folder,
-    load_last_db_path,
     save_last_db_path,
     save_last_folder,
 )

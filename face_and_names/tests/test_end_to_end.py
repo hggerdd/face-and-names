@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
-import pytest
 from PIL import Image
 
-from face_and_names.app_context import AppContext, EventBus, initialize_app
 from face_and_names.models.db import initialize_database
 from face_and_names.services.ingest_service import IngestOptions, IngestService
 from face_and_names.services.people_service import PeopleService
@@ -28,22 +25,8 @@ def test_e2e_ingest_to_person_assignment(tmp_path: Path) -> None:
     
     # Initialize App Context manually to control DB path
     conn = initialize_database(db_path)
-    from face_and_names.services.workers import JobManager
-    job_manager = JobManager(max_workers=1)
     registry_path = default_registry_path(db_root)
     people_service = PeopleService(conn, registry_path=registry_path)
-    
-    context = AppContext(
-        config={},
-        db_path=db_path,
-        conn=conn,
-        config_path=db_root / "config.toml",
-        job_manager=job_manager,
-        events=EventBus(),
-        people_service=people_service,
-        registry_path=registry_path,
-        prediction_service=None,
-    )
     
     # 2. Ingest
     ingest = IngestService(db_root, conn)

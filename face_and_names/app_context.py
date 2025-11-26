@@ -18,11 +18,11 @@ from typing import Any
 from face_and_names.config.loader import load_config
 from face_and_names.logging.setup import setup_logging
 from face_and_names.models.db import initialize_database
-from face_and_names.services.workers import JobManager
-from face_and_names.utils.event_bus import EventBus
 from face_and_names.services.people_service import PeopleService
 from face_and_names.services.person_registry import default_registry_path
 from face_and_names.services.prediction_service import PredictionService
+from face_and_names.services.workers import JobManager
+from face_and_names.utils.event_bus import EventBus
 
 ENV_CONFIG_DIR = "FACE_AND_NAMES_CONFIG_DIR"
 ENV_DB_PATH = "FACE_AND_NAMES_DB_PATH"

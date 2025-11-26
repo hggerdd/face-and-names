@@ -6,13 +6,12 @@ from typing import Generator
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QTreeWidgetItem
 
 from face_and_names.app_context import AppContext, EventBus
 from face_and_names.models.db import initialize_database
 from face_and_names.models.repositories import ImageRepository, ImportSessionRepository
-from face_and_names.ui.faces_page import FacesPage, ImageRecord
 from face_and_names.services.person_registry import default_registry_path
+from face_and_names.ui.faces_page import FacesPage
 
 
 @pytest.fixture

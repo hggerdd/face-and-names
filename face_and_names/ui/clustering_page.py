@@ -4,29 +4,27 @@ Clustering page: select scope, run clustering, and browse clusters.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
 
-from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap, QIcon
+from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
-    QScrollArea,
-    QHBoxLayout,
-    QDialog,
-    QMessageBox,
-    QGridLayout,
 )
 
 from face_and_names.app_context import AppContext

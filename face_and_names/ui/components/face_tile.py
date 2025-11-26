@@ -29,22 +29,21 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QContextMenuEvent, QImage, QMouseEvent, QPixmap, QIcon
+from PyQt6.QtGui import QContextMenuEvent, QImage, QMouseEvent, QPixmap
 from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
-    QMenu,
+    QListWidget,
     QMessageBox,
+    QPushButton,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
-    QInputDialog,
-    QListWidget,
-    QPushButton,
-    QDialogButtonBox,
-    QDialog,
-    QSizePolicy,
 )
 
 

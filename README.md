@@ -18,3 +18,6 @@ All legacy code has been removed. This repository is now a clean slate for the v
 - Do not invent additional features beyond the stated requirements.
 - Do not store personal data.
 - Do not scaffold backend boilerplate unless explicitly requested.
+
+## Tooling
+- Lint/format with Ruff; see `docs/linting.md` for commands and exclusions.

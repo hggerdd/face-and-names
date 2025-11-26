@@ -15,7 +15,6 @@ from typing import Iterable, List
 
 from PIL import Image
 
-
 logger = logging.getLogger(__name__)
 
 

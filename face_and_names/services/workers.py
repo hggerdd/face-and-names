@@ -11,7 +11,6 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict
 
-
 ProgressCallback = Callable[[Dict[str, Any], Dict[str, Any] | None], None]
 JobCallable = Callable[[threading.Event, ProgressCallback, Dict[str, Any], Dict[str, Any] | None], Any]
 

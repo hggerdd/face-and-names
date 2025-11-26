@@ -219,6 +219,7 @@ def test_face_crop_expands_by_configured_pct(monkeypatch, tmp_path: Path) -> Non
     row = conn.execute("SELECT face_crop_blob FROM face").fetchone()
     assert row is not None
     from io import BytesIO
+
     from PIL import Image
 
     with Image.open(BytesIO(row[0])) as crop:
