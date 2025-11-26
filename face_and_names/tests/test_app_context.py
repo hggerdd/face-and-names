@@ -35,7 +35,9 @@ def test_initialize_app_honors_env_paths(monkeypatch, tmp_path: Path) -> None:
     # Ensure schema applied
     tables = {
         row[0]
-        for row in context.conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+        for row in context.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table';"
+        ).fetchall()
     }
     assert "image" in tables and "face" in tables
 

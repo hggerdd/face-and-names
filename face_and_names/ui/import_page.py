@@ -82,7 +82,9 @@ class IngestWorker(QObject):
 class ImportPage(QWidget):
     """UI for DB Root selection and ingest kickoff."""
 
-    def __init__(self, context: AppContext, on_context_changed: Callable[[AppContext], None]) -> None:
+    def __init__(
+        self, context: AppContext, on_context_changed: Callable[[AppContext], None]
+    ) -> None:
         super().__init__()
         self.context = context
         self.on_context_changed = on_context_changed
@@ -195,7 +197,9 @@ class ImportPage(QWidget):
         recursive = self.recursive_checkbox.isChecked()
 
         self.cancel_event = threading.Event()
-        detector_cfg = self.context.config.get("detector", {}) if isinstance(self.context.config, dict) else {}
+        detector_cfg = (
+            self.context.config.get("detector", {}) if isinstance(self.context.config, dict) else {}
+        )
         crop_expand_pct = float(detector_cfg.get("crop_expand_pct", 0.05))
         face_target_size = int(detector_cfg.get("face_target_size", 224))
         self._thread = QThread(self)
@@ -229,9 +233,7 @@ class ImportPage(QWidget):
             )
         else:
             status = (
-                "Ingest cancelled"
-                if getattr(progress, "cancelled", False)
-                else "Ingest finished"
+                "Ingest cancelled" if getattr(progress, "cancelled", False) else "Ingest finished"
             )
             self.status_label.setText(
                 f"{status}: processed {progress.processed}, skipped {progress.skipped_existing}"
@@ -257,14 +259,22 @@ class ImportPage(QWidget):
             pixmap = QPixmap()
             if pixmap.loadFromData(progress.last_thumbnail):
                 scaled = pixmap.scaled(
-                    self.thumb_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                    self.thumb_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
                 )
                 self.thumb_label.setPixmap(scaled)
         if progress.last_face_thumbs is not None:
             for lbl, data in zip(self.face_thumb_labels, progress.last_face_thumbs):
                 px = QPixmap()
                 if px.loadFromData(data):
-                    lbl.setPixmap(px.scaled(lbl.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                    lbl.setPixmap(
+                        px.scaled(
+                            lbl.size(),
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
             # clear remaining labels
             if len(progress.last_face_thumbs) < len(self.face_thumb_labels):
                 for lbl in self.face_thumb_labels[len(progress.last_face_thumbs) :]:

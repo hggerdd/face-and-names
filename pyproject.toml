@@ -53,6 +53,7 @@ testpaths = ["face_and_names/tests"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.5.0",
     "pytest>=9.0.1",
     "pytest-qt>=4.5.0",
 ]

@@ -14,7 +14,7 @@ def setup_logging(
     level: str = "INFO",
     max_bytes: int = 5 * 1024 * 1024,
     backup_count: int = 3,
-    ) -> None:
+) -> None:
     """Configure structured logging with console + rotating file handlers."""
     log_dir = log_dir or Path(".") / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)

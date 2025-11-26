@@ -119,9 +119,13 @@ class FaceTile(QWidget):
         img_layout.addWidget(self.image_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.pred_label = QLabel("", alignment=Qt.AlignmentFlag.AlignLeft)
-        self.pred_label.setStyleSheet("color: #eee; background: rgba(0,0,0,0.55); padding: 2px 4px;")
+        self.pred_label.setStyleSheet(
+            "color: #eee; background: rgba(0,0,0,0.55); padding: 2px 4px;"
+        )
         self.pred_label.mouseDoubleClickEvent = lambda event: self._assign_predicted()  # type: ignore[assignment]
-        img_layout.addWidget(self.pred_label, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        img_layout.addWidget(
+            self.pred_label, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom
+        )
 
         self.image_container.setLayout(img_layout)
 
@@ -187,14 +191,22 @@ class FaceTile(QWidget):
             return
         if self.selected:
             scaled = self._orig_pixmap.scaled(
-                160, 160, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                160,
+                160,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
             )
             self.image_label.setPixmap(scaled)
             self.image_label.setGraphicsEffect(None)
         else:
-            img: QImage = self._orig_pixmap.toImage().convertToFormat(QImage.Format.Format_Grayscale8)
+            img: QImage = self._orig_pixmap.toImage().convertToFormat(
+                QImage.Format.Format_Grayscale8
+            )
             pix = QPixmap.fromImage(img).scaled(
-                160, 160, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                160,
+                160,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
             )
             self.image_label.setPixmap(pix)
 
@@ -202,7 +214,10 @@ class FaceTile(QWidget):
         if not self.data:
             return
         ret = QMessageBox.question(
-            self, "Delete face", "Delete this face and all references?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            self,
+            "Delete face",
+            "Delete this face and all references?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if ret != QMessageBox.StandardButton.Yes:
             return
@@ -278,18 +293,32 @@ class FaceTile(QWidget):
         first_last = current.split(" ", 1)
         first_default = first_last[0] if first_last else ""
         last_default = first_last[1] if len(first_last) > 1 else ""
-        first_name, ok1 = QInputDialog.getText(self, "Rename person", "First name:", text=first_default)
+        first_name, ok1 = QInputDialog.getText(
+            self, "Rename person", "First name:", text=first_default
+        )
         if not ok1:
             return
-        last_name, ok2 = QInputDialog.getText(self, "Rename person", "Last name:", text=last_default)
+        last_name, ok2 = QInputDialog.getText(
+            self, "Rename person", "Last name:", text=last_default
+        )
         if not ok2:
             return
-        short_name, ok3 = QInputDialog.getText(self, "Rename person", "Short name (optional):", text=current)
+        short_name, ok3 = QInputDialog.getText(
+            self, "Rename person", "Short name (optional):", text=current
+        )
         if not ok3:
             return
         try:
-            self.rename_person_cb(self.data.person_id, first_name.strip(), last_name.strip(), short_name.strip() or None)
-            self.personRenamed.emit(self.data.person_id, short_name.strip() or f"{first_name.strip()} {last_name.strip()}".strip())
+            self.rename_person_cb(
+                self.data.person_id,
+                first_name.strip(),
+                last_name.strip(),
+                short_name.strip() or None,
+            )
+            self.personRenamed.emit(
+                self.data.person_id,
+                short_name.strip() or f"{first_name.strip()} {last_name.strip()}".strip(),
+            )
             name = self._resolve_display_name(self.data.person_id)
             if name:
                 self.assigned_label.setText(name)
@@ -338,7 +367,9 @@ class PersonSelectDialog(QDialog):
         rename_btn = QPushButton("Rename")
         rename_btn.clicked.connect(self._rename_person)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
 
@@ -420,17 +451,25 @@ class PersonSelectDialog(QDialog):
         parts = current.split(" ", 1)
         first_default = parts[0] if parts else ""
         last_default = parts[1] if len(parts) > 1 else ""
-        first_name, ok1 = QInputDialog.getText(self, "Rename person", "First name:", text=first_default)
+        first_name, ok1 = QInputDialog.getText(
+            self, "Rename person", "First name:", text=first_default
+        )
         if not ok1:
             return
-        last_name, ok2 = QInputDialog.getText(self, "Rename person", "Last name:", text=last_default)
+        last_name, ok2 = QInputDialog.getText(
+            self, "Rename person", "Last name:", text=last_default
+        )
         if not ok2:
             return
-        short_name, ok3 = QInputDialog.getText(self, "Rename person", "Short name (optional):", text=current)
+        short_name, ok3 = QInputDialog.getText(
+            self, "Rename person", "Short name (optional):", text=current
+        )
         if not ok3:
             return
         pid = self.persons[idx]["id"]
-        self.rename_person_cb(pid, first_name.strip(), last_name.strip(), short_name.strip() or None)
+        self.rename_person_cb(
+            pid, first_name.strip(), last_name.strip(), short_name.strip() or None
+        )
         display = short_name.strip() or f"{first_name.strip()} {last_name.strip()}".strip()
         self.persons[idx]["primary_name"] = display
         self.persons[idx]["display_name"] = display

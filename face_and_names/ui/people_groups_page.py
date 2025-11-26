@@ -74,7 +74,9 @@ class PeopleTableModel(QAbstractTableModel):
 
 
 class PersonEditDialog(QDialog):
-    def __init__(self, *, first: str = "", last: str = "", short: str = "", parent: QWidget | None = None) -> None:
+    def __init__(
+        self, *, first: str = "", last: str = "", short: str = "", parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Edit person")
         self.first_edit = QLineEdit(first)
@@ -89,7 +91,9 @@ class PersonEditDialog(QDialog):
         form.addWidget(QLabel("Short name (optional)"))
         form.addWidget(self.short_edit)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
@@ -106,7 +110,9 @@ class PersonEditDialog(QDialog):
 
 
 class PeopleGroupsPage(QWidget):
-    def __init__(self, service_provider: Callable[[], PeopleService | None], parent: QWidget | None = None) -> None:
+    def __init__(
+        self, service_provider: Callable[[], PeopleService | None], parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self._service_provider = service_provider
         self.table = QTableView()

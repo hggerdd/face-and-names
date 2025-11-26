@@ -121,12 +121,19 @@ class IngestService:
         cancelled = False
         checkpoint_payload: dict[str, object] | None = {"next_index": start_index}
 
-        LOGGER.info("Ingest session %s started: %d folders, %d images queued", session_id, len(resolved_folders), total)
+        LOGGER.info(
+            "Ingest session %s started: %d folders, %d images queued",
+            session_id,
+            len(resolved_folders),
+            total,
+        )
 
         detector = self._load_detector()
         self._ensure_face_crop_column()
 
-        for idx, result in enumerate(self._process_paths(paths, cancel_event=cancel_event), start=start_index):
+        for idx, result in enumerate(
+            self._process_paths(paths, cancel_event=cancel_event), start=start_index
+        ):
             image_path = result.path
             is_new = False
             thumb_bytes = None
@@ -287,7 +294,9 @@ class IngestService:
     def _relative_path_str(self, path: Path) -> str:
         return str(path.resolve().relative_to(self.db_root.resolve())).replace("\\", "/")
 
-    def _process_image(self, raw_bytes: bytes) -> tuple[bytes, int, int, int, bytes, dict[str, str]]:
+    def _process_image(
+        self, raw_bytes: bytes
+    ) -> tuple[bytes, int, int, int, bytes, dict[str, str]]:
         """Return normalized bytes, phash, dimensions, thumbnail bytes, and metadata."""
         with Image.open(BytesIO(raw_bytes)) as image:
             image.load()
@@ -347,7 +356,9 @@ class IngestService:
         cols = {row[1] for row in self.conn.execute("PRAGMA table_info(face)")}.copy()
         if "face_crop_blob" not in cols:
             LOGGER.warning("Adding missing face_crop_blob column to face table")
-            self.conn.execute("ALTER TABLE face ADD COLUMN face_crop_blob BLOB NOT NULL DEFAULT x'';")
+            self.conn.execute(
+                "ALTER TABLE face ADD COLUMN face_crop_blob BLOB NOT NULL DEFAULT x'';"
+            )
             self.conn.commit()
 
     def _load_detector(self) -> DetectorAdapter | None:
@@ -409,7 +420,9 @@ class IngestService:
             face_entries: list[tuple[FaceDetection, bytes]] = []
             for idx, det in enumerate(detections):
                 if len(det.bbox_abs) != 4 or len(det.bbox_rel) != 4:
-                    LOGGER.warning("Skipping invalid detection bbox for %s: %s", image_path, det.bbox_abs)
+                    LOGGER.warning(
+                        "Skipping invalid detection bbox for %s: %s", image_path, det.bbox_abs
+                    )
                     continue
                 x, y, w, h = self._expand_bbox(det.bbox_abs, img_w, img_h, self.crop_expand_pct)
                 crop = image.crop((x, y, x + w, y + h))
@@ -420,7 +433,9 @@ class IngestService:
             predictions: list[dict[str, object]] = []
             if self.prediction_service and face_entries:
                 try:
-                    predictions = self.prediction_service.predict_batch([cb for _, cb in face_entries])
+                    predictions = self.prediction_service.predict_batch(
+                        [cb for _, cb in face_entries]
+                    )
                 except Exception as exc:  # pragma: no cover - defensive logging
                     LOGGER.warning("Prediction failed for %s: %s", image_path, exc)
                     predictions = [{} for _ in face_entries]
@@ -475,7 +490,9 @@ class IngestService:
     def _process_single_path(self, path: Path) -> "ProcessedImage":
         try:
             raw_bytes = path.read_bytes()
-            normalized_bytes, phash, width, height, thumb_bytes, metadata = self._process_image(raw_bytes)
+            normalized_bytes, phash, width, height, thumb_bytes, metadata = self._process_image(
+                raw_bytes
+            )
             return ProcessedImage(
                 path=path,
                 raw_bytes=raw_bytes,

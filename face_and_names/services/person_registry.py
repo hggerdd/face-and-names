@@ -120,7 +120,10 @@ class PersonRegistry:
             record = self._require(pid)
             for alias in record.aliases:
                 self._add_alias_to_record(target, alias["name"], alias.get("kind", "alias"))
-            if record.primary_name and not any(a.get("kind") == "primary" and a.get("name") == record.primary_name for a in target.aliases):
+            if record.primary_name and not any(
+                a.get("kind") == "primary" and a.get("name") == record.primary_name
+                for a in target.aliases
+            ):
                 self._add_alias_to_record(target, record.primary_name, "merged")
             self._index.pop(pid, None)
         self._data["people"] = [p.to_dict() for p in self._index.values()]

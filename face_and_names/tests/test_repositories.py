@@ -92,7 +92,9 @@ def test_metadata_repository_adds_entries(conn: sqlite3.Connection) -> None:
     )
 
     metadata.add_entries(image_id, {"Orientation": "6", "DateTimeOriginal": "2020:01:01"}, "EXIF")
-    count = conn.execute("SELECT COUNT(*) FROM metadata WHERE image_id = ?", (image_id,)).fetchone()[0]
+    count = conn.execute(
+        "SELECT COUNT(*) FROM metadata WHERE image_id = ?", (image_id,)
+    ).fetchone()[0]
     assert count == 2
 
 
@@ -128,7 +130,9 @@ def test_face_repository_saves_faces(conn: sqlite3.Connection) -> None:
         prediction_confidence=None,
     )
 
-    stored = conn.execute("SELECT id, image_id, provenance FROM face WHERE id = ?", (face_id,)).fetchone()
+    stored = conn.execute(
+        "SELECT id, image_id, provenance FROM face WHERE id = ?", (face_id,)
+    ).fetchone()
     assert stored == (face_id, image_id, "detected")
 
 
@@ -138,7 +142,9 @@ def test_people_groups_aliases_and_links(conn: sqlite3.Connection) -> None:
     groups = GroupRepository(conn)
     person_groups = PersonGroupRepository(conn)
 
-    person_id = people.create("Alice", "Smith", short_name=None, birthdate="1990-01-01", notes="note")
+    person_id = people.create(
+        "Alice", "Smith", short_name=None, birthdate="1990-01-01", notes="note"
+    )
     alias_id = aliases.add_alias(person_id, "Al")
     group_id = groups.create("Family", color="#ff0000")
     person_groups.add_memberships(person_id, [group_id])

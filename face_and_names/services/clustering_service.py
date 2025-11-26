@@ -111,7 +111,9 @@ class ClusteringService:
                 )
                 for i in idxs
             ]
-            results.append(ClusterResult(cluster_id=cid, faces=clustered_faces, is_noise=(cid == 0)))
+            results.append(
+                ClusterResult(cluster_id=cid, faces=clustered_faces, is_noise=(cid == 0))
+            )
 
         results.sort(key=lambda c: (c.is_noise, c.cluster_id))
         return results
@@ -228,7 +230,9 @@ class ClusteringService:
         try:
             pass  # type: ignore
         except Exception as exc:  # pragma: no cover - optional dependency
-            LOGGER.warning("ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc)
+            LOGGER.warning(
+                "ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc
+            )
             return self._embedding_vector(img, opts)
 
         if self._arcface_session is None:

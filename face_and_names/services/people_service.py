@@ -108,9 +108,14 @@ class PeopleService:
             ).fetchall()
         }
         people: list[dict[str, Any]] = []
-        for record in sorted(self.registry.list_people(), key=lambda r: r.primary_name.lower() if r.primary_name else ""):
+        for record in sorted(
+            self.registry.list_people(),
+            key=lambda r: r.primary_name.lower() if r.primary_name else "",
+        ):
             pid = record.id
-            display = self.display_name(record.first_name, record.last_name, record.short_name, record.primary_name)
+            display = self.display_name(
+                record.first_name, record.last_name, record.short_name, record.primary_name
+            )
             people.append(
                 {
                     "id": pid,
@@ -134,7 +139,9 @@ class PeopleService:
         description: str | None = None,
         color: str | None = None,
     ) -> int:
-        gid = self.groups.create(name=name, parent_group_id=parent_group_id, description=description, color=color)
+        gid = self.groups.create(
+            name=name, parent_group_id=parent_group_id, description=description, color=color
+        )
         self.conn.commit()
         return gid
 
@@ -145,7 +152,9 @@ class PeopleService:
     def rename_person(
         self, person_id: int, first_name: str, last_name: str, short_name: str | None = None
     ) -> None:
-        self.registry.rename_person(person_id, first_name=first_name, last_name=last_name, short_name=short_name)
+        self.registry.rename_person(
+            person_id, first_name=first_name, last_name=last_name, short_name=short_name
+        )
         self._rewrite_person_tables()
         self.conn.commit()
 
@@ -282,7 +291,9 @@ class PeopleService:
                     continue
         if registry_ids:
             placeholders = ", ".join("?" for _ in registry_ids)
-            self.conn.execute(f"DELETE FROM person WHERE id NOT IN ({placeholders})", list(registry_ids))
+            self.conn.execute(
+                f"DELETE FROM person WHERE id NOT IN ({placeholders})", list(registry_ids)
+            )
         else:
             # Only clear the table if there are no dependent rows
             linked = self.conn.execute(
@@ -293,7 +304,9 @@ class PeopleService:
                 self.conn.execute("DELETE FROM person")
         if max_id > 0:
             try:
-                self.conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'person'", (max_id,))
+                self.conn.execute(
+                    "UPDATE sqlite_sequence SET seq = ? WHERE name = 'person'", (max_id,)
+                )
             except sqlite3.OperationalError:
                 # sqlite_sequence may not exist depending on table creation flags
                 pass
@@ -306,7 +319,12 @@ class PeopleService:
                 continue
             self.conn.execute("UPDATE face SET person_id = ? WHERE person_id = ?", (new_id, old_id))
             self.conn.execute(
-                "UPDATE face SET predicted_person_id = ? WHERE predicted_person_id = ?", (new_id, old_id)
+                "UPDATE face SET predicted_person_id = ? WHERE predicted_person_id = ?",
+                (new_id, old_id),
             )
-            self.conn.execute("UPDATE person_alias SET person_id = ? WHERE person_id = ?", (new_id, old_id))
-            self.conn.execute("UPDATE person_group SET person_id = ? WHERE person_id = ?", (new_id, old_id))
+            self.conn.execute(
+                "UPDATE person_alias SET person_id = ? WHERE person_id = ?", (new_id, old_id)
+            )
+            self.conn.execute(
+                "UPDATE person_group SET person_id = ? WHERE person_id = ?", (new_id, old_id)
+            )

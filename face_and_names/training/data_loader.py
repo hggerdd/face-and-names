@@ -67,5 +67,7 @@ def load_verified_faces(conn: sqlite3.Connection, limit: int | None = None) -> L
             logger.warning("Skipping face %s: failed to decode blob (%s)", face_id, exc)
             continue
         source = str(rel_path or filename or f"face_{face_id}")
-        samples.append(FaceSample(face_id=int(face_id), person_id=int(person_id), image=img, source=source))
+        samples.append(
+            FaceSample(face_id=int(face_id), person_id=int(person_id), image=img, source=source)
+        )
     return samples

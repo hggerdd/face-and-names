@@ -138,7 +138,13 @@ class ClusteringPage(QWidget):
         self.cluster_label = QLabel("No clusters loaded")
         self.feature_source_combo = QComboBox()
         self.feature_source_combo.addItems(
-            ["pHash (normalized)", "pHash (raw)", "Raw (downscaled)", "Embedding (FaceNet)", "Embedding (ArcFace)"]
+            [
+                "pHash (normalized)",
+                "pHash (raw)",
+                "Raw (downscaled)",
+                "Embedding (FaceNet)",
+                "Embedding (ArcFace)",
+            ]
         )
         self.faces_area = QScrollArea()
         self.faces_area.setWidgetResizable(True)
@@ -157,7 +163,9 @@ class ClusteringPage(QWidget):
         self._build_ui()
         self.refresh_data()
         try:
-            self.context.events.subscribe("ingest_completed", lambda *args, **kwargs: self.refresh_data())
+            self.context.events.subscribe(
+                "ingest_completed", lambda *args, **kwargs: self.refresh_data()
+            )
         except Exception:
             pass
 
@@ -238,7 +246,9 @@ class ClusteringPage(QWidget):
         min_samples = int(self.min_samples_spin.value())
         k_clusters = int(self.kmeans_clusters_spin.value())
         idx = self.feature_source_combo.currentIndex()
-        feature_source = {0: "phash", 1: "phash_raw", 2: "raw", 3: "embedding", 4: "arcface"}.get(idx, "phash")
+        feature_source = {0: "phash", 1: "phash_raw", 2: "raw", 3: "embedding", 4: "arcface"}.get(
+            idx, "phash"
+        )
         self.status_label.setText("Clustering…")
         self.run_btn.setEnabled(False)
         self.prev_btn.setEnabled(False)
@@ -345,7 +355,9 @@ class ClusteringPage(QWidget):
                 delete_face=self._delete_face,
                 assign_person=self._assign_person,
                 list_persons=self.people_service.list_people,
-                create_person=lambda first, last, short: self.people_service.create_person(first, last, short),
+                create_person=lambda first, last, short: self.people_service.create_person(
+                    first, last, short
+                ),
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
             )
@@ -452,9 +464,11 @@ class ClusteringPage(QWidget):
         except Exception as exc:  # pragma: no cover - UI guardrail
             QMessageBox.critical(self, "Assign failed", str(exc))
 
-
     def _refresh_people_list(self) -> None:
-        people = sorted(self.people_service.list_people(), key=lambda p: p.get("display_name") or p.get("primary_name") or "")
+        people = sorted(
+            self.people_service.list_people(),
+            key=lambda p: p.get("display_name") or p.get("primary_name") or "",
+        )
         self.names_list.clear()
         for person in people:
             name = person.get("display_name") or person.get("primary_name") or "(unnamed)"
@@ -469,7 +483,9 @@ class ClusteringPage(QWidget):
                 return
             tiles = self._selected_tiles()
             if not tiles:
-                QMessageBox.information(self, "No selection", "Select one or more faces to set a name.")
+                QMessageBox.information(
+                    self, "No selection", "Select one or more faces to set a name."
+                )
                 return
             for tile in tiles:
                 self.face_repo.update_person(tile.data.face_id, int(pid))

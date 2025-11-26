@@ -21,3 +21,4 @@ All legacy code has been removed. This repository is now a clean slate for the v
 
 ## Tooling
 - Lint/format with Ruff; see `docs/linting.md` for commands and exclusions.
+- Pre-commit hooks run Ruff (lint/format) and `pytest` via `uv`. Install once: `uvx pre-commit install --config .pre-commit-config.yaml`. Run manually: `uvx pre-commit run --all-files --config .pre-commit-config.yaml`.

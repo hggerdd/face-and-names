@@ -14,9 +14,7 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
 
 
 def _insert_import_session(conn: sqlite3.Connection) -> int:
-    conn.execute(
-        "INSERT INTO import_session (folder_count, image_count) VALUES (?, ?)", (1, 0)
-    )
+    conn.execute("INSERT INTO import_session (folder_count, image_count) VALUES (?, ?)", (1, 0))
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 

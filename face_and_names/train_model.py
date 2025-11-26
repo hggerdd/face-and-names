@@ -16,9 +16,13 @@ from face_and_names.training.trainer import TrainingConfig, train_model_from_db
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Train face recognition classifier from verified faces.")
+    parser = argparse.ArgumentParser(
+        description="Train face recognition classifier from verified faces."
+    )
     parser.add_argument("--db", type=Path, help="SQLite database path (defaults to configured DB).")
-    parser.add_argument("--model-dir", type=Path, default=Path("model"), help="Output directory for artifacts.")
+    parser.add_argument(
+        "--model-dir", type=Path, default=Path("model"), help="Output directory for artifacts."
+    )
     args = parser.parse_args(argv)
 
     context = initialize_app(db_path=args.db)

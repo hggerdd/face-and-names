@@ -20,6 +20,7 @@ def _import_qt_app():
     """
     try:
         from PyQt6.QtWidgets import QApplication
+
         return QApplication
     except ImportError:
         if sys.platform == "win32":

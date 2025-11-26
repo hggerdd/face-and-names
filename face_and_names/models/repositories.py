@@ -158,9 +158,17 @@ class FaceRepository:
             columns.append("face_detection_index")
             values.append(face_detection_index)
         columns.extend(
-            ["cluster_id", "person_id", "predicted_person_id", "prediction_confidence", "provenance"]
+            [
+                "cluster_id",
+                "person_id",
+                "predicted_person_id",
+                "prediction_confidence",
+                "provenance",
+            ]
         )
-        values.extend([cluster_id, person_id, predicted_person_id, prediction_confidence, provenance])
+        values.extend(
+            [cluster_id, person_id, predicted_person_id, prediction_confidence, provenance]
+        )
         placeholders = ", ".join("?" for _ in columns)
         cols_sql = ", ".join(columns)
         cursor = self.conn.execute(
@@ -246,7 +254,7 @@ class GroupRepository:
         color: str | None = None,
     ) -> int:
         cursor = self.conn.execute(
-            "INSERT INTO \"group\" (name, parent_group_id, description, color) VALUES (?, ?, ?, ?)",
+            'INSERT INTO "group" (name, parent_group_id, description, color) VALUES (?, ?, ?, ?)',
             (name, parent_group_id, description, color),
         )
         return int(cursor.lastrowid)

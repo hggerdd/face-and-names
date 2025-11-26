@@ -108,7 +108,7 @@ class PredictionReviewPage(QWidget):
         left.addWidget(QLabel("Names"))
         left.addWidget(self.people_list)
         main.addLayout(left)
-        
+
         right = QVBoxLayout()
         right.addLayout(filters)
         right.addLayout(pagination_layout)
@@ -123,7 +123,7 @@ class PredictionReviewPage(QWidget):
         self.unnamed_only.stateChanged.connect(self._reset_and_load)
         self.refresh_btn.clicked.connect(self.refresh_data)
         self.accept_btn.clicked.connect(self._accept_predictions)
-        
+
         self.prev_btn.clicked.connect(self._prev_page)
         self.next_btn.clicked.connect(self._next_page)
 
@@ -152,7 +152,10 @@ class PredictionReviewPage(QWidget):
     def _load_people(self) -> None:
         current_id = self._selected_person_id()
         self.people_list.clear()
-        people = sorted(self.people_service.list_people(), key=lambda p: p.get("display_name") or p.get("primary_name"))
+        people = sorted(
+            self.people_service.list_people(),
+            key=lambda p: p.get("display_name") or p.get("primary_name"),
+        )
         counts = self._predicted_counts()
         for person in people:
             name = person.get("display_name") or person.get("primary_name") or "(unnamed)"
@@ -220,22 +223,22 @@ class PredictionReviewPage(QWidget):
     def _load_faces(self) -> None:
         self._clear_faces()
         pid = self._selected_person_id()
-        
+
         total_count = self._count_total_faces(pid)
         total_pages = max(1, (total_count + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
-        
+
         # Clamp current page
         if self.current_page >= total_pages:
             self.current_page = max(0, total_pages - 1)
-            
+
         offset = self.current_page * self.PAGE_SIZE
         rows = self._fetch_faces(predicted_person_id=pid, limit=self.PAGE_SIZE, offset=offset)
-        
+
         # Update pagination UI
         self.page_label.setText(f"{self.current_page + 1}/{total_pages}")
         self.prev_btn.setEnabled(self.current_page > 0)
         self.next_btn.setEnabled(self.current_page < total_pages - 1)
-        
+
         if not rows:
             self.status_label.setText("No predictions to review.")
             return
@@ -255,7 +258,9 @@ class PredictionReviewPage(QWidget):
                 delete_face=self._delete_face,
                 assign_person=self._assign_person,
                 list_persons=self.people_service.list_people,
-                create_person=lambda first, last, short: self.people_service.create_person(first, last, short),
+                create_person=lambda first, last, short: self.people_service.create_person(
+                    first, last, short
+                ),
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
             )
@@ -267,13 +272,15 @@ class PredictionReviewPage(QWidget):
             self.current_tiles.append(tile)
         self.status_label.setText(f"Showing {len(rows)} faces (Total: {total_count})")
 
-    def _fetch_faces(self, predicted_person_id: int | None, limit: int, offset: int) -> List[FaceRow]:
+    def _fetch_faces(
+        self, predicted_person_id: int | None, limit: int, offset: int
+    ) -> List[FaceRow]:
         where, params = self._build_filter_query(predicted_person_id)
-        
+
         # Add LIMIT and OFFSET
         params.append(limit)
         params.append(offset)
-        
+
         rows = self.context.conn.execute(
             f"""
             SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id, pp.primary_name,
@@ -320,7 +327,9 @@ class PredictionReviewPage(QWidget):
     def _accept_predictions(self) -> None:
         tiles = self._selected_tiles()
         if not tiles:
-            QMessageBox.information(self, "No selection", "Select one or more faces to accept predictions.")
+            QMessageBox.information(
+                self, "No selection", "Select one or more faces to accept predictions."
+            )
             return
         try:
             for tile in tiles:

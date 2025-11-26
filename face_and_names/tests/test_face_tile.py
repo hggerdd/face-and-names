@@ -11,7 +11,9 @@ from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # UI-heavy tests are skipped in environments where headless Qt can hang; adjust when GUI testing infra is available.
-pytest.skip("Skipping FaceTile UI interaction tests in headless/offscreen mode", allow_module_level=True)
+pytest.skip(
+    "Skipping FaceTile UI interaction tests in headless/offscreen mode", allow_module_level=True
+)
 
 
 def _make_crop_bytes(color: str = "red", size: tuple[int, int] = (48, 48)) -> bytes:

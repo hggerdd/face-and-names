@@ -128,7 +128,9 @@ class PredictionTrainingPage(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b>Prediction model training</b>"), alignment=Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(
+            QLabel("<b>Prediction model training</b>"), alignment=Qt.AlignmentFlag.AlignTop
+        )
         layout.addWidget(self.summary_label)
         layout.addWidget(self.status_label)
         layout.addWidget(self.progress_bar)
@@ -185,7 +187,9 @@ class PredictionTrainingPage(QWidget):
         self.progress_bar.setValue(percent)
 
     def _on_finished(self, metrics: dict) -> None:
-        self.status_label.setText(f"Done. Classes={metrics.get('classes')} Samples={metrics.get('samples')}")
+        self.status_label.setText(
+            f"Done. Classes={metrics.get('classes')} Samples={metrics.get('samples')}"
+        )
         self.progress_bar.setValue(100)
         self.start_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)

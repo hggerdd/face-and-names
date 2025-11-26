@@ -155,7 +155,7 @@ def test_cluster_with_normalized_phash_handles_brightness(tmp_path: Path) -> Non
         )
         return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
-    add_face_shade(20)   # dark
+    add_face_shade(20)  # dark
     add_face_shade(230)  # bright
     conn.commit()
 

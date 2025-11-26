@@ -30,7 +30,9 @@ class PredictionService:
     def _load(self) -> None:
         self.bundle = load_artifacts(self.model_dir, embedder_factory=self.embedder_factory)
 
-    def predict_batch(self, face_blobs: Iterable[bytes], options: dict | None = None) -> list[dict[str, Any]]:
+    def predict_batch(
+        self, face_blobs: Iterable[bytes], options: dict | None = None
+    ) -> list[dict[str, Any]]:
         if not self.bundle:
             raise RuntimeError("Model not loaded")
 
@@ -49,6 +51,13 @@ class PredictionService:
 
         results = []
         for idx, pred in enumerate(preds):
-            person_id = self.bundle.person_ids[int(pred)] if pred < len(self.bundle.person_ids) else None
-            results.append({"person_id": person_id, "confidence": float(confidences[idx]) if confidences[idx] is not None else None})
+            person_id = (
+                self.bundle.person_ids[int(pred)] if pred < len(self.bundle.person_ids) else None
+            )
+            results.append(
+                {
+                    "person_id": person_id,
+                    "confidence": float(confidences[idx]) if confidences[idx] is not None else None,
+                }
+            )
         return results

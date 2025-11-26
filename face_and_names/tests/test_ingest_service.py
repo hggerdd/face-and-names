@@ -13,7 +13,9 @@ from face_and_names.services.ingest_service import IngestOptions, IngestService
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
-def _make_image(path: Path, size: tuple[int, int], orientation: int | None = None, color: str = "red") -> None:
+def _make_image(
+    path: Path, size: tuple[int, int], orientation: int | None = None, color: str = "red"
+) -> None:
     image = Image.new("RGB", size, color=color)
     exif = Image.Exif()
     if orientation is not None:
@@ -275,7 +277,9 @@ def test_ingest_applies_prediction(monkeypatch, tmp_path: Path) -> None:
     _make_image(img1, (20, 20))
 
     conn = initialize_database(db_root / "faces.db")
-    conn.execute("INSERT INTO person (id, primary_name, first_name, last_name) VALUES (1, 'Test Person', 'Test', 'Person')")
+    conn.execute(
+        "INSERT INTO person (id, primary_name, first_name, last_name) VALUES (1, 'Test Person', 'Test', 'Person')"
+    )
     conn.commit()
     predictor = DummyPredictor()
     ingest = IngestService(db_root=db_root, conn=conn, prediction_service=predictor)
@@ -285,7 +289,5 @@ def test_ingest_applies_prediction(monkeypatch, tmp_path: Path) -> None:
 
     assert progress.face_count == 1
     assert getattr(DummyPredictor, "called_with", 0) == 1
-    row = conn.execute(
-        "SELECT predicted_person_id, prediction_confidence FROM face"
-    ).fetchone()
+    row = conn.execute("SELECT predicted_person_id, prediction_confidence FROM face").fetchone()
     assert row == (1, pytest.approx(0.55))

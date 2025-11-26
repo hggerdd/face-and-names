@@ -198,7 +198,9 @@ class FacesPage(QWidget):
         self._load_page(reset=True)
 
     def _load_page(self, reset: bool = False) -> None:
-        imgs, total = self._load_images(self.current_folder, offset=self.current_offset, limit=self.page_size)
+        imgs, total = self._load_images(
+            self.current_folder, offset=self.current_offset, limit=self.page_size
+        )
         if reset:
             self.image_list.clear()
         for rec in imgs:
@@ -208,14 +210,17 @@ class FacesPage(QWidget):
         self.current_offset += len(imgs)
         self.total_images = total
         self.load_more_btn.setEnabled(self.current_offset < self.total_images)
-        self.status.setText(f"{self.current_offset}/{self.total_images} images in /{self.current_folder or '/'}")
+        self.status.setText(
+            f"{self.current_offset}/{self.total_images} images in /{self.current_folder or '/'}"
+        )
 
     def _load_more(self) -> None:
         self._load_page(reset=False)
 
     def _load_images(self, folder: str, offset: int, limit: int) -> tuple[List[ImageRecord], int]:
         total = self.context.conn.execute(
-            "SELECT COUNT(*) FROM image WHERE sub_folder = ?", (folder,),
+            "SELECT COUNT(*) FROM image WHERE sub_folder = ?",
+            (folder,),
         ).fetchone()[0]
         rows = self.context.conn.execute(
             """
@@ -303,9 +308,15 @@ class FacesPage(QWidget):
                 open_original=self._open_original_image,
             )
             tile.deleteCompleted.connect(self._on_face_deleted)
-            tile.personAssigned.connect(lambda fid, pid, img_id=image_id: self._refresh_after_change(img_id))
-            tile.personCreated.connect(lambda _, __, img_id=image_id: self._refresh_after_change(img_id))
-            tile.personRenamed.connect(lambda _, __, img_id=image_id: self._refresh_after_change(img_id))
+            tile.personAssigned.connect(
+                lambda fid, pid, img_id=image_id: self._refresh_after_change(img_id)
+            )
+            tile.personCreated.connect(
+                lambda _, __, img_id=image_id: self._refresh_after_change(img_id)
+            )
+            tile.personRenamed.connect(
+                lambda _, __, img_id=image_id: self._refresh_after_change(img_id)
+            )
             self.face_tiles_layout.addWidget(tile)
         self.face_tiles_layout.addStretch(1)
 

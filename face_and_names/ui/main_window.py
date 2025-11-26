@@ -60,46 +60,69 @@ class MainWindow(QMainWindow):
         # FacesPage is default, so we can load it eagerly or lazy-but-immediately-triggered
         def create_faces():
             from face_and_names.ui.faces_page import FacesPage
+
             return FacesPage(self.context)
 
         def create_import():
             from face_and_names.ui.import_page import ImportPage
+
             return ImportPage(self.context, on_context_changed=self._replace_context)
 
         def create_clustering():
             from face_and_names.ui.clustering_page import ClusteringPage
+
             return ClusteringPage(self.context)
 
         def create_training():
             from face_and_names.ui.prediction_training_page import PredictionTrainingPage
+
             return PredictionTrainingPage(self.context)
 
         def create_review():
             from face_and_names.ui.prediction_review_page import PredictionReviewPage
+
             return PredictionReviewPage(self.context)
 
         def create_people():
             from face_and_names.ui.people_groups_page import PeopleGroupsPage
+
             return PeopleGroupsPage(self._ensure_people_service)
 
         def create_settings():
             from face_and_names.ui.settings_page import SettingsPage
+
             return SettingsPage(self.context)
 
-        self._add_page("Faces", "Faces workspace: clusters/predictions/people views", factory=create_faces)
-        self._add_page("Import", "Ingest photos from DB Root with progress/resume", factory=create_import)
+        self._add_page(
+            "Faces", "Faces workspace: clusters/predictions/people views", factory=create_faces
+        )
+        self._add_page(
+            "Import", "Ingest photos from DB Root with progress/resume", factory=create_import
+        )
         self._add_page("Clustering", "Configure and run clustering jobs", factory=create_clustering)
-        self._add_page("Prediction Model Training", "Prepare and train prediction models", factory=create_training)
-        self._add_page("Prediction Review", "Review and accept model predictions", factory=create_review)
-        self._add_page("People & Groups", "Manage people records, aliases, groups", factory=create_people)
+        self._add_page(
+            "Prediction Model Training",
+            "Prepare and train prediction models",
+            factory=create_training,
+        )
+        self._add_page(
+            "Prediction Review", "Review and accept model predictions", factory=create_review
+        )
+        self._add_page(
+            "People & Groups", "Manage people records, aliases, groups", factory=create_people
+        )
         self._add_page("Diagnostics", "Model/DB health, self-test, repair tools")
-        self._add_page("Settings", "App preferences, device/worker caps, paths", factory=create_settings)
+        self._add_page(
+            "Settings", "App preferences, device/worker caps, paths", factory=create_settings
+        )
 
         # Default selection
         if self.nav.count():
             self.nav.setCurrentRow(0)
 
-    def _add_page(self, name: str, placeholder: str, factory: Callable[[], QWidget] | None = None) -> None:
+    def _add_page(
+        self, name: str, placeholder: str, factory: Callable[[], QWidget] | None = None
+    ) -> None:
         """Add a nav item and register factory."""
         item = QListWidgetItem(name)
         item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -127,7 +150,7 @@ class MainWindow(QMainWindow):
             return
         name = current_items[0].text()
         index = self.nav.row(current_items[0])
-        
+
         # Check if we need to instantiate
         if name in self._factories:
             factory = self._factories.pop(name)
@@ -173,7 +196,9 @@ class MainWindow(QMainWindow):
         try:
             conn = initialize_database(self.context.db_path)
             self.context.conn = conn
-            self.context.people_service = PeopleService(conn, registry_path=self.context.registry_path)
+            self.context.people_service = PeopleService(
+                conn, registry_path=self.context.registry_path
+            )
             return self.context.people_service
         except Exception:
             return None

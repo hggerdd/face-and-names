@@ -12,7 +12,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict
 
 ProgressCallback = Callable[[Dict[str, Any], Dict[str, Any] | None], None]
-JobCallable = Callable[[threading.Event, ProgressCallback, Dict[str, Any], Dict[str, Any] | None], Any]
+JobCallable = Callable[
+    [threading.Event, ProgressCallback, Dict[str, Any], Dict[str, Any] | None], Any
+]
 
 
 @dataclass
@@ -53,7 +55,11 @@ class JobManager:
     ) -> str:
         job_id = str(uuid.uuid4())
         record = JobRecord(
-            id=job_id, type=job_type, priority=priority, payload=payload, checkpoint=checkpoint or {}
+            id=job_id,
+            type=job_type,
+            priority=priority,
+            payload=payload,
+            checkpoint=checkpoint or {},
         )
         with self._lock:
             self._jobs[job_id] = record
@@ -66,7 +72,9 @@ class JobManager:
         try:
             result = func(
                 record.cancel_event,
-                lambda progress, checkpoint=None: self._update_progress(record.id, progress, checkpoint),
+                lambda progress, checkpoint=None: self._update_progress(
+                    record.id, progress, checkpoint
+                ),
                 dict(record.checkpoint),
                 record.payload,
             )
@@ -133,7 +141,13 @@ class JobManager:
         with self._lock:
             record = self._jobs.get(job_id)
             checkpoint = dict(record.checkpoint) if record else {}
-        return self.enqueue(job_type=record.type if record else "unknown", func=func, payload=payload, priority=priority, checkpoint=checkpoint)  # type: ignore[arg-type]
+        return self.enqueue(
+            job_type=record.type if record else "unknown",
+            func=func,
+            payload=payload,
+            priority=priority,
+            checkpoint=checkpoint,
+        )  # type: ignore[arg-type]
 
     def wait(self, job_id: str, timeout: float | None = None) -> None:
         with self._lock:

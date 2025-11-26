@@ -96,11 +96,15 @@ def test_merge_people_rebinds_faces_and_aliases(tmp_path: Path) -> None:
     face_row = conn.execute("SELECT person_id, predicted_person_id FROM face").fetchone()
     assert face_row == (target, target)
 
-    aliases = conn.execute("SELECT name FROM person_alias WHERE person_id = ?", (target,)).fetchall()
+    aliases = conn.execute(
+        "SELECT name FROM person_alias WHERE person_id = ?", (target,)
+    ).fetchall()
     alias_names = {row[0] for row in aliases}
     assert "P1" in alias_names
 
-    memberships = conn.execute("SELECT COUNT(*) FROM person_group WHERE person_id = ?", (target,)).fetchone()[0]
+    memberships = conn.execute(
+        "SELECT COUNT(*) FROM person_group WHERE person_id = ?", (target,)
+    ).fetchone()[0]
     assert memberships == 1
 
     row = conn.execute("SELECT 1 FROM person WHERE id = ?", (source,)).fetchone()
@@ -115,6 +119,8 @@ def test_rename_person_updates_name(tmp_path: Path) -> None:
     pid = service.create_person("Old", "Name")
     service.rename_person(pid, "New", "Name", short_name="NN")
 
-    row = conn.execute("SELECT primary_name, short_name FROM person WHERE id = ?", (pid,)).fetchone()
+    row = conn.execute(
+        "SELECT primary_name, short_name FROM person WHERE id = ?", (pid,)
+    ).fetchone()
     assert row[0] == "NN"
     assert row[1] == "NN"

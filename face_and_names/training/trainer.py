@@ -105,7 +105,12 @@ def train_model_from_db(
         counts[s.person_id] = counts.get(s.person_id, 0) + 1
     dropped = {pid for pid, cnt in counts.items() if cnt < cfg.min_class_size}
     if dropped:
-        logger.warning("Dropping %d classes with < %d samples: %s", len(dropped), cfg.min_class_size, sorted(dropped))
+        logger.warning(
+            "Dropping %d classes with < %d samples: %s",
+            len(dropped),
+            cfg.min_class_size,
+            sorted(dropped),
+        )
         samples = [s for s in samples if s.person_id not in dropped]
         if not samples:
             raise RuntimeError("All classes were dropped due to insufficient samples")

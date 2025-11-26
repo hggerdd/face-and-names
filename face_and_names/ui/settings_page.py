@@ -22,7 +22,9 @@ class SettingsPage(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout()
         layout.addWidget(QLabel("<b>Settings</b>"), alignment=Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(QLabel("Reset will delete images, faces, metadata, sessions, stats, audit logs."))
+        layout.addWidget(
+            QLabel("Reset will delete images, faces, metadata, sessions, stats, audit logs.")
+        )
         layout.addWidget(QLabel("People, aliases, and groups are preserved."))
         layout.addWidget(self.reset_btn)
         layout.addWidget(self.status)
