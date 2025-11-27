@@ -39,6 +39,14 @@ from face_and_names.ui.components.face_tile import FaceTile, FaceTileData, Perso
 from face_and_names.ui.faces_page import FaceImageView
 
 
+def _person_sort_key(person: dict) -> str:
+    """Sort by short name, falling back to display/primary, case-insensitive."""
+    name = (
+        person.get("short_name") or person.get("display_name") or person.get("primary_name") or ""
+    )
+    return name.casefold()
+
+
 @dataclass
 class ClusterState:
     clusters: List[ClusterResult]
@@ -465,10 +473,7 @@ class ClusteringPage(QWidget):
             QMessageBox.critical(self, "Assign failed", str(exc))
 
     def _refresh_people_list(self) -> None:
-        people = sorted(
-            self.people_service.list_people(),
-            key=lambda p: p.get("display_name") or p.get("primary_name") or "",
-        )
+        people = sorted(self.people_service.list_people(), key=_person_sort_key)
         self.names_list.clear()
         for person in people:
             name = person.get("display_name") or person.get("primary_name") or "(unnamed)"
