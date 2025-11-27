@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from face_and_names.constants import UNKNOWN_SHORT_NAME
 from face_and_names.models.db import initialize_database
 from face_and_names.services.people_service import PeopleService
 from face_and_names.services.person_registry import PersonRegistry, default_registry_path
@@ -44,9 +45,13 @@ def test_create_person_adds_aliases(tmp_path: Path) -> None:
     pid = service.create_person("Alice", "Doe", short_name="Ali", aliases=["Al", "A"])
     people = service.list_people()
 
+    unknown = [p for p in people if p["short_name"] == UNKNOWN_SHORT_NAME]
+    assert unknown, "Expected an _unknown placeholder person"
+    created = [p for p in people if p["id"] == pid][0]
+
     assert pid > 0
-    assert people[0]["display_name"] == "Ali"
-    assert {"name": "Al", "kind": "alias"} in people[0]["aliases"]
+    assert created["display_name"] == "Ali"
+    assert {"name": "Al", "kind": "alias"} in created["aliases"]
     # Registry persisted to disk
     reg = PersonRegistry(registry_path)
     assert reg.get(pid).primary_name == "Ali"

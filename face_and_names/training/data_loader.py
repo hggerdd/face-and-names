@@ -15,6 +15,8 @@ from typing import Iterable, List
 
 from PIL import Image
 
+from face_and_names.constants import UNKNOWN_SHORT_NAME
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,22 +41,25 @@ def load_verified_faces(conn: sqlite3.Connection, limit: int | None = None) -> L
     - person_id must be present
     - face_crop_blob must be present
     - if a `verified` column exists, it must be true (non-zero)
+    - exclude faces tagged with the '_unknown' placeholder (case-insensitive)
     """
     conditions = ["person_id IS NOT NULL", "face_crop_blob IS NOT NULL"]
     if _has_verified_column(conn):
         conditions.append("verified = 1")
+    conditions.append("LOWER(COALESCE(p.short_name, p.primary_name, '')) != ?")
     where = " AND ".join(conditions)
     sql = f"""
         SELECT f.id, f.face_crop_blob, f.person_id, i.relative_path, i.filename
         FROM face f
         JOIN image i ON i.id = f.image_id
+        JOIN person p ON p.id = f.person_id
         WHERE {where}
         ORDER BY f.person_id, f.id
     """
-    params: Iterable[int] = ()
+    params: Iterable[object] = (UNKNOWN_SHORT_NAME,)
     if limit is not None:
         sql += " LIMIT ?"
-        params = (limit,)
+        params = (UNKNOWN_SHORT_NAME, limit)
 
     rows = conn.execute(sql, params).fetchall()
     samples: list[FaceSample] = []

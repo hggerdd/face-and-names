@@ -8,6 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from face_and_names.constants import UNKNOWN_SHORT_NAME
 from face_and_names.models.repositories import (
     GroupRepository,
     PersonAliasRepository,
@@ -30,6 +31,7 @@ class PeopleService:
         self.groups = GroupRepository(conn)
         self.person_groups = PersonGroupRepository(conn)
         self._synchronize_registry_and_db()
+        self.unknown_person_id = self.ensure_unknown_person()
 
     def _ensure_person_schema(self) -> None:
         """Add missing person columns for legacy databases."""
@@ -157,6 +159,22 @@ class PeopleService:
         )
         self._rewrite_person_tables()
         self.conn.commit()
+
+    def ensure_unknown_person(self) -> int:
+        """
+        Ensure an '_unknown' placeholder exists for tagging unidentified faces.
+
+        Returns the person_id of the placeholder (creating it if needed).
+        """
+        for record in self.registry.list_people():
+            name = record.short_name or record.primary_name
+            if name and name.strip().lower() == UNKNOWN_SHORT_NAME:
+                self._rewrite_person_tables()
+                return record.id
+
+        pid = self.registry.add_person(first_name="", last_name="", short_name=UNKNOWN_SHORT_NAME)
+        self._rewrite_person_tables()
+        return pid
 
     # Synchronization helpers --------------------------------------------
     def _synchronize_registry_and_db(self) -> None:

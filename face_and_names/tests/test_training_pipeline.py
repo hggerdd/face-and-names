@@ -114,6 +114,26 @@ def test_load_verified_faces_returns_named_rows(tmp_path: Path) -> None:
     assert samples[0].person_id == 1
 
 
+def test_load_verified_faces_excludes_unknown(tmp_path: Path) -> None:
+    conn = initialize_database(tmp_path / "faces.db")
+    conn.execute(
+        "INSERT INTO person (id, primary_name, first_name, last_name, short_name) VALUES (?, ?, ?, ?, ?)",
+        (1, "_unknown", "", "", "_unknown"),
+    )
+    conn.execute(
+        "INSERT INTO person (id, primary_name, first_name, last_name) VALUES (?, ?, ?, ?)",
+        (2, "Known", "Known", ""),
+    )
+    image_id = _insert_import_and_image(conn)
+    _insert_face(conn, image_id, person_id=1, blob=_make_image_bytes("red"))
+    _insert_face(conn, image_id, person_id=2, blob=_make_image_bytes("blue"))
+    conn.commit()
+
+    samples = load_verified_faces(conn)
+    assert len(samples) == 1
+    assert samples[0].person_id == 2
+
+
 def test_train_and_predict_round_trip(tmp_path: Path) -> None:
     db_path = tmp_path / "faces.db"
     conn = initialize_database(db_path)
