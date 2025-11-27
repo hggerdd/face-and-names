@@ -33,9 +33,9 @@ class AppContext:
     """Shared application context passed into the UI."""
 
     config: dict[str, Any]
+    config_path: Path
     db_path: Path
     conn: sqlite3.Connection
-    config_path: Path
     job_manager: JobManager
     events: EventBus
     people_service: PeopleService
@@ -98,9 +98,9 @@ def initialize_app(
 
     return AppContext(
         config=config,
+        config_path=config_path,
         db_path=resolved_db_path,
         conn=conn,
-        config_path=config_path,
         job_manager=job_manager,
         events=events,
         people_service=people_service,

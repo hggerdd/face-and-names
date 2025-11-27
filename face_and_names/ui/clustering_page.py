@@ -368,6 +368,9 @@ class ClusteringPage(QWidget):
                 ),
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
+                confirm_delete=self.context.config.get("ui", {}).get("confirm_delete_face", True)
+                if isinstance(self.context.config, dict)
+                else True,
             )
             tile.deleteCompleted.connect(lambda fid, self=self: self._on_tile_deleted(fid))
             tile.dataChanged.connect(lambda fid, self=self: self._on_tile_deleted(fid))

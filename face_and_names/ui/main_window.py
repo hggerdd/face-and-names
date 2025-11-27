@@ -86,7 +86,16 @@ class MainWindow(QMainWindow):
         def create_people():
             from face_and_names.ui.people_groups_page import PeopleGroupsPage
 
-            return PeopleGroupsPage(self._ensure_people_service)
+            confirm_delete = True
+            if isinstance(self.context.config, dict):
+                confirm_delete = bool(
+                    self.context.config.get("ui", {}).get("confirm_delete_face", True)
+                )
+            return PeopleGroupsPage(
+                self._ensure_people_service,
+                confirm_delete=confirm_delete,
+                db_path=self.context.db_path,
+            )
 
         def create_settings():
             from face_and_names.ui.settings_page import SettingsPage
