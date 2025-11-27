@@ -68,6 +68,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-027** Users shall be able to bulk-assign a name/person ID to all selected faces in the current cluster, clearing their cluster IDs. **[REQ]**
 - **FR-028** The system shall support select-all/deselect-all in the current cluster and wrap-around navigation between clusters with a position indicator. **[REQ]**
 - **FR-029** Deleting a face from the Naming view shall remove it from the DB and refresh the cluster display. **[REQ][LEG]**
+- **FR-096** Person lists shown in clustering/naming contexts shall be sorted case-insensitively by short name (falling back to display/primary name) to speed assignment of known people. **[DER]**
 
 ### 4.6 Per-Person Analysis
 - **FR-030** The system shall list people (Person IDs) with their primary names/aliases and support global rename operations across all linked faces. **[REQ]**
@@ -100,6 +101,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-069** The system shall support hierarchical groups (parent/child) such that a parent group (e.g., Family) can contain subgroups (e.g., Near Family, Extended Family), and membership in a child implies membership in its parent. **[DER]**
 - **FR-070** The Faces workspace filters shall include group/tag selection (multi-select) to scope faces by group membership. **[DER]**
 - **FR-093** The system shall persist a shared person registry file (IDs/names/aliases) outside the DB, mirror it into SQLite on load, and propagate person edits/merges back to the registry to keep IDs stable across DB Roots. **[DER]**
+- **FR-094** The system shall provide an `_unknown` placeholder person that can be assigned to unidentified faces without deleting them; faces tagged `_unknown` are retained in the DB but are excluded from model training/selection. **[DER]**
 
 ### 4.11 Diagnostics
 - **FR-048** The system shall present a diagnostics panel showing model presence/health, DB health, cache stats, and device selection (CPU/GPU). **[REQ]**
@@ -149,6 +151,7 @@ All requirements are implementation-neutral, atomic, testable, and traceable to 
 - **FR-090** The classifier shall be trained on embeddings with class-aware balancing and shall report at least overall validation accuracy; classes with insufficient samples shall be logged and skipped. **[DER]**
 - **FR-091** Model artifacts shall be stored under top-level `model/` containing classifier (`classifier.pkl`), scaler/normalizer, `person_id_mapping.json`, `embedding_config.json`, and `metrics.json`; a `version.txt` shall record timestamp/uuid/app version. **[DER]**
 - **FR-092** Prediction/inference shall load the model artifacts from `model/`, reconstruct the embedder with saved config, and return person ID + confidence; missing/incompatible artifacts shall surface clear errors without crashing the app. **[DER]**
+- **FR-095** Training data loaders shall exclude faces assigned to the `_unknown` placeholder person so models are not trained on unknowns. **[DER]**
 
 ## 5. Non-Functional Requirements (NFR)
 - **NFR-001 Performance**: Time from launch to main UI ready (or splash dismissal) shall be ≤ 2 seconds on target modest hardware, measured with a representative DB and no blocking tasks. **[REQ]**
