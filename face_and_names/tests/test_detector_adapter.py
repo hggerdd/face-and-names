@@ -1,10 +1,15 @@
 from pathlib import Path
 
+import cv2  # noqa: F401
 import pytest
+import ultralytics  # noqa: F401
 
 from face_and_names.services.detector_adapter import DetectorAdapter
 
-pytest.importorskip("ultralytics")
+
+def test_detector_dependencies_present() -> None:
+    assert ultralytics is not None
+    assert cv2 is not None
 
 
 def test_load_raises_when_weights_missing(tmp_path: Path) -> None:
