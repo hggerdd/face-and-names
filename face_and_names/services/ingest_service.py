@@ -70,6 +70,7 @@ class IngestService:
         crop_expand_pct: float = 0.05,
         face_target_size: int = 224,
         prediction_service: PredictionService | None = None,
+        detector_weights: Path | None = None,
     ) -> None:
         self.db_root = db_root
         self.conn = conn
@@ -81,6 +82,7 @@ class IngestService:
         self.crop_expand_pct = crop_expand_pct
         self.face_target_size = max(1, int(face_target_size))
         self.prediction_service = prediction_service
+        self.detector_weights = detector_weights
         self._known_person_ids: set[int] = {
             int(row[0]) for row in self.conn.execute("SELECT id FROM person").fetchall()
         }
@@ -128,7 +130,7 @@ class IngestService:
             total,
         )
 
-        detector = self._load_detector()
+        detector = self._load_detector(errors)
         self._ensure_face_crop_column()
 
         for idx, result in enumerate(
@@ -361,10 +363,22 @@ class IngestService:
             )
             self.conn.commit()
 
-    def _load_detector(self) -> DetectorAdapter | None:
-        weights = Path(__file__).resolve().parents[2] / "yolov11n-face.pt"
-        if not weights.exists():
-            LOGGER.warning("Detector weights not found at %s; skipping detection", weights)
+    def _load_detector(self, errors: list[str]) -> DetectorAdapter | None:
+        """
+        Load the YOLO detector. Returns None when unavailable but records the reason in errors.
+        Searches common locations so installs outside the repo can still find the weights.
+        """
+        candidates = [
+            self.detector_weights,
+            self.db_root / "yolov11n-face.pt",
+            Path.cwd() / "yolov11n-face.pt",
+            Path(__file__).resolve().parents[2] / "yolov11n-face.pt",
+        ]
+        weights = next((p for p in candidates if p and Path(p).exists()), None)
+        if weights is None:
+            msg = "Detector weights not found; place yolov11n-face.pt in the DB root or working directory."
+            LOGGER.error(msg)
+            errors.append(msg)
             return None
         try:
             detector = DetectorAdapter(weights_path=weights)
@@ -372,7 +386,9 @@ class IngestService:
             LOGGER.info("Loaded detector from %s", weights)
             return detector
         except Exception as exc:  # pragma: no cover
-            LOGGER.error("Failed to load detector: %s", exc)
+            msg = f"Failed to load detector ({weights}): {exc}"
+            LOGGER.error(msg)
+            errors.append(msg)
             return None
 
     def _detect_faces(

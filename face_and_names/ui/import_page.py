@@ -49,6 +49,7 @@ class IngestWorker(QObject):
         crop_expand_pct: float = 0.05,
         face_target_size: int = 224,
         prediction_service=None,
+        detector_weights: Path | None = None,
     ) -> None:
         super().__init__()
         self.db_root = db_root
@@ -59,6 +60,7 @@ class IngestWorker(QObject):
         self.crop_expand_pct = crop_expand_pct
         self.face_target_size = face_target_size
         self.prediction_service = prediction_service
+        self.detector_weights = detector_weights
 
     def run(self) -> None:
         conn = initialize_database(self.db_root / "faces.db")
@@ -68,6 +70,7 @@ class IngestWorker(QObject):
             crop_expand_pct=self.crop_expand_pct,
             face_target_size=self.face_target_size,
             prediction_service=self.prediction_service,
+            detector_weights=self.detector_weights,
         )
         progress = service.start_session(
             self.folders,
@@ -202,6 +205,9 @@ class ImportPage(QWidget):
         )
         crop_expand_pct = float(detector_cfg.get("crop_expand_pct", 0.05))
         face_target_size = int(detector_cfg.get("face_target_size", 224))
+        detector_weights = detector_cfg.get("weights_path")
+        if detector_weights:
+            detector_weights = Path(detector_weights)
         self._thread = QThread(self)
         self._worker = IngestWorker(
             db_root=self.db_root,
@@ -212,6 +218,7 @@ class ImportPage(QWidget):
             crop_expand_pct=crop_expand_pct,
             face_target_size=face_target_size,
             prediction_service=self.context.prediction_service,
+            detector_weights=detector_weights,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

@@ -40,7 +40,8 @@ def test_ingest_imports_images_and_thumbnails(tmp_path: Path) -> None:
     assert progress.processed == 2
     assert progress.skipped_existing == 0
     assert progress.total == 2
-    assert progress.errors == []
+    non_detector_errors = [e for e in progress.errors if "detector" not in e.lower()]
+    assert non_detector_errors == []
 
     image_rows = conn.execute(
         "SELECT relative_path, sub_folder, width, height, thumbnail_blob FROM image ORDER BY id"
@@ -113,7 +114,7 @@ def test_ingest_skips_invalid_detection_boxes(monkeypatch, tmp_path: Path) -> No
 
     conn = initialize_database(db_root / "faces.db")
     ingest = IngestService(db_root=db_root, conn=conn)
-    monkeypatch.setattr(ingest, "_load_detector", lambda: DummyDetector())
+    monkeypatch.setattr(ingest, "_load_detector", lambda errors=None: DummyDetector())
 
     progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
 
@@ -213,7 +214,7 @@ def test_face_crop_expands_by_configured_pct(monkeypatch, tmp_path: Path) -> Non
 
     conn = initialize_database(db_root / "faces.db")
     ingest = IngestService(db_root=db_root, conn=conn, crop_expand_pct=0.1, face_target_size=24)
-    monkeypatch.setattr(ingest, "_load_detector", lambda: DummyDetector())
+    monkeypatch.setattr(ingest, "_load_detector", lambda errors=None: DummyDetector())
 
     progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
 
@@ -245,7 +246,7 @@ def test_face_crops_are_normalized(monkeypatch, tmp_path: Path) -> None:
 
     conn = initialize_database(db_root / "faces.db")
     ingest = IngestService(db_root=db_root, conn=conn, face_target_size=64)
-    monkeypatch.setattr(ingest, "_load_detector", lambda: DummyDetector())
+    monkeypatch.setattr(ingest, "_load_detector", lambda errors=None: DummyDetector())
 
     progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
 
@@ -283,7 +284,7 @@ def test_ingest_applies_prediction(monkeypatch, tmp_path: Path) -> None:
     conn.commit()
     predictor = DummyPredictor()
     ingest = IngestService(db_root=db_root, conn=conn, prediction_service=predictor)
-    monkeypatch.setattr(ingest, "_load_detector", lambda: DummyDetector())
+    monkeypatch.setattr(ingest, "_load_detector", lambda errors=None: DummyDetector())
 
     progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
 
