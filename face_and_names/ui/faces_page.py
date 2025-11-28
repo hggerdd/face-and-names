@@ -306,6 +306,7 @@ class FacesPage(QWidget):
                 create_person=self._create_person,
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
+                confirm_delete=self._confirm_delete_enabled(),
             )
             tile.deleteCompleted.connect(self._on_face_deleted)
             tile.personAssigned.connect(
@@ -367,6 +368,11 @@ class FacesPage(QWidget):
         window.setLayout(layout)
         window.resize(800, 600)
         window.exec()
+
+    def _confirm_delete_enabled(self) -> bool:
+        if isinstance(self.context.config, dict):
+            return bool(self.context.config.get("ui", {}).get("confirm_delete_face", True))
+        return True
 
     def _load_face_table(self, image_id: int) -> None:
         rows = self.context.conn.execute(

@@ -5,10 +5,7 @@ Default configuration values scaffold.
 from __future__ import annotations
 
 DEFAULTS: dict[str, object] = {
-    "ui": {
-        "theme": "system",
-        "density": "comfortable",
-    },
+    "ui": {"theme": "system", "density": "comfortable", "confirm_delete_face": True},
     "db": {"path": "faces.db"},
     "device": {"preferred": "auto"},
     "workers": {"cpu_max": 2, "gpu_max": 1},

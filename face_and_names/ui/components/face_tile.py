@@ -77,6 +77,7 @@ class FaceTile(QWidget):
         create_person: Callable[[str], int],
         rename_person: Callable[[int, str], None],
         open_original: Callable[[int], None] | None = None,
+        confirm_delete: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -87,6 +88,7 @@ class FaceTile(QWidget):
         self.create_person_cb = create_person
         self.rename_person_cb = rename_person
         self.open_original_cb = open_original
+        self.confirm_delete = confirm_delete
         self.selected = True
         self._orig_pixmap: QPixmap | None = None
 
@@ -213,14 +215,15 @@ class FaceTile(QWidget):
     def _on_delete_clicked(self) -> None:
         if not self.data:
             return
-        ret = QMessageBox.question(
-            self,
-            "Delete face",
-            "Delete this face and all references?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if ret != QMessageBox.StandardButton.Yes:
-            return
+        if self.confirm_delete:
+            ret = QMessageBox.question(
+                self,
+                "Delete face",
+                "Delete this face and all references?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ret != QMessageBox.StandardButton.Yes:
+                return
         try:
             self.delete_face_cb(self.data.face_id)
             self.deleteCompleted.emit(self.data.face_id)

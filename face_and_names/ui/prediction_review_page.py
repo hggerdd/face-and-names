@@ -263,6 +263,7 @@ class PredictionReviewPage(QWidget):
                 ),
                 rename_person=self.people_service.rename_person,
                 open_original=self._open_original_image,
+                confirm_delete=self._confirm_delete_enabled(),
             )
             tile.personAssigned.connect(lambda fid, pid, self=self: self._after_change())
             tile.personCreated.connect(lambda pid, name, self=self: self._after_change())
@@ -366,3 +367,9 @@ class PredictionReviewPage(QWidget):
         window.setLayout(layout)
         window.resize(800, 600)
         window.exec()
+
+    def _confirm_delete_enabled(self) -> bool:
+        cfg = getattr(self.context, "config", None)
+        if isinstance(cfg, dict):
+            return bool(cfg.get("ui", {}).get("confirm_delete_face", True))
+        return True
