@@ -218,14 +218,20 @@ class PeopleGroupsPage(QWidget):
 
     def _date_filter_clause(self, img_alias: str, session_alias: str, params: list[object]) -> str:
         shot = self._shot_date_expr(img_alias, session_alias)
+        # SQLite's date() function expects 'YYYY-MM-DD'. EXIF often has 'YYYY:MM:DD HH:MM:SS'.
+        # We extract the first 10 characters (YYYY:MM:DD) and replace colons with dashes.
+        # This handles both 'YYYY:MM:DD' and 'YYYY-MM-DD' correctly.
+
+        date_expr = f"date(REPLACE(SUBSTR(COALESCE({shot}, '1900-01-01'), 1, 10), ':', '-'))"
+
         if self.timeline_selected_month:
             year, month = self.timeline_selected_month
             params.extend([f"{year:04d}-{month:02d}-01", f"{year:04d}-{month:02d}-31"])
-            return f"AND date(COALESCE({shot}, '1900-01-01')) BETWEEN ? AND ?"
+            return f"AND {date_expr} BETWEEN ? AND ?"
         if self.date_range:
             start, end = self.date_range
             params.extend([start.date().isoformat(), end.date().isoformat()])
-            return f"AND date(COALESCE({shot}, '1900-01-01')) BETWEEN ? AND ?"
+            return f"AND {date_expr} BETWEEN ? AND ?"
         return ""
 
     def _refresh_people(self) -> None:
