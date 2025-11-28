@@ -45,44 +45,44 @@ You are an AI coding assistant working exclusively inside this project. Your obj
 **Never commit or push directly to `main`.  
 Never develop new features on `main`.**
 
-All work must be done in branches.
+All work must be performed on branches.
 
-When a request is made:
+For every request:
 
-1. Determine whether the current active branch matches the task.  
-2. If yes, continue working on that branch.  
-3. If no, create a new branch using one of the following conventions:  
+1. Check whether the current branch is appropriate.  
+2. If yes, continue working on it.  
+3. If not, create a new branch using one of these conventions:  
    - `feature/<short-description>`  
    - `fix/<short-description>`  
    - `refactor/<module>`  
-4. Only propose a merge to `main` when:  
+4. A merge into `main` is only allowed when:  
    - All tests pass  
    - Linting passes  
    - Documentation updates are included  
    - The branch contains a complete, reviewable unit of work  
 
-### 3.2 Commit & PR Requirements
+### 3.2 Commits & PRs
 
-- Use small, atomic commits.
-- Write clear, imperative commit messages.
-- Group related changes logically (code + tests + docs).
-- If the change affects DB schemas or JSON registry format, document it explicitly.
-- Ensure PRs explain:
+- Keep commits small and atomic.
+- Use clear, imperative commit messages.
+- Include relevant tests and documentation updates in the same branch.
+- If DB schemas or the global registry change, document it explicitly.
+- PR descriptions must include:
   - What changed  
   - Why  
   - How it is tested  
-  - Whether docs were updated  
+  - Which docs were updated  
 
 ### 3.3 Tooling
 
-Use **`uv`** for all Python operations:
+Use **`uv`** for all Python and environment operations:
 
-- `uv sync`
-- `uv run pytest`
-- `uv run ruff check .`
-- `uv run <script>`
+- `uv sync`  
+- `uv run pytest`  
+- `uv run ruff check .`  
+- `uv run <script>`  
 
-Pre-commit hooks are expected to run:
+Pre-commit hooks are assumed to execute:
 
 - `uv run ruff check .`
 - `uv run pytest`
@@ -95,103 +95,116 @@ Pre-commit hooks are expected to run:
 
 - Use a **layered architecture**:
   - Domain layer  
-  - Infrastructure layer (DB, filesystem, models)  
-  - Services (workflows, coordinators)  
-  - UI layer (if applicable)
-- Keep logic decoupled from external libraries through adapter interfaces.
-- Prefer dependency injection (pass services explicitly).
+  - Infrastructure layer (SQLite, filesystem, external model adapters)  
+  - Service/application layer  
+  - UI layer (if applicable)  
+- Avoid cross-layer leakage.  
+- Apply dependency injection rather than global variables.
 
-### 4.2 Type Safety
+### 4.2 Type Safety and Type Hints
 
-- Full type hints required for all public functions, methods, and classes.
-- Use `dataclass`, `TypedDict`, or protocols where appropriate.
-- Code should be ready for future static checking (e.g., mypy).
+**Use type hints everywhere possible.  
+Type hints are mandatory for all public functions, classes, methods, and module-level APIs.**
+
+- Use `typing` constructs (`Optional`, `Dict`, `List`, `Union`, `Literal`, `Protocol`, `TypedDict`, etc.).  
+- Use `dataclass` for domain models where appropriate.  
+- Ensure new code is written with strong type clarity in mind.  
+- Write code so future static checkers (e.g., mypy) can be integrated without major refactoring.
 
 ### 4.3 Error Handling
 
-- Handle expected errors explicitly and clearly.
-- Never swallow exceptions silently.
-- Raise precise exceptions with actionable messages.
-- Log when appropriate; do not rely on print debugging.
+- Handle expected error conditions explicitly.
+- Never hide exceptions silently.
+- Raise meaningful exceptions with clear messages.
+- Use logging where appropriate; avoid print-based debugging.
 
 ### 4.4 Imports & Dependencies
 
 - Keep imports minimal, organized, and justified.
-- Avoid large dependencies unless explicitly requested.
+- Introduce no large or unnecessary dependencies without explicit instruction.
 
 ### 4.5 Configuration
 
-- Collect configuration in one place (e.g., `config.py`).
-- Avoid hard-coded paths and environment-dependent values.
+- Centralize configuration (e.g., in `config.py`).
+- Avoid hard-coded paths and non-portable settings.
 
 ---
 
 ## 5. Testing & Quality
 
-### 5.1 Core Principles
+### 5.1 Principles
 
-- Code changes must come with matching tests.
-- Prefer focused unit tests.
-- Add integration tests for workflows across modules.
-- Always ensure:
-  - `uv run pytest`
-  - `uv run ruff check .`
-  both succeed before merge.
+- Every change must include appropriate tests.
+- Use `pytest` with clear, focused test functions.
+- Integration tests are encouraged for cross-module workflows.
+- Always run:
+  - `uv run pytest`  
+  - `uv run ruff check .`  
+  before considering work complete.
 
 ### 5.2 Mandatory Rule for Bug Fixes
 
-**Every bug fix must include a test that would have caught the bug.  
-No exception.**
+**Every bug fix must include a test that reproduces the bug and prevents regression.  
+No exceptions.**
 
-The bug-fix workflow is:
+Bug fix workflow:
 
-1. Reproduce the bug (describe the failing scenario).  
-2. Write a **failing test** that captures the defect.  
+1. Identify and reproduce the bug.  
+2. Create a **failing test case** that captures the defect.  
 3. Fix the bug.  
-4. Make sure the new test passes.  
-5. Run the full test + lint suite.  
+4. Ensure the new test passes.  
+5. Run the complete test suite and linting.  
 
-This ensures:
+This guarantees:
 
-- The bug is never reintroduced.  
-- The suite documents real-world failures.  
+- No bug can reoccur silently.  
+- The test suite evolves with real-world error conditions.  
 - Regression protection increases over time.
 
 ### 5.3 Regression Discipline
 
-- Tests representing fixed bugs must never be removed unless the entire feature is removed.
-- Do not weaken assertions to “make tests pass.”
-- Bug tests should ideally include:
-  - The original failing input  
-  - Expected corrected output  
-  - Edge-case boundaries  
+- Tests for past bugs must never be removed unless the feature is removed.
+- Do not weaken test assertions to force tests to pass.
+- Bug tests should include:
+  - The exact failing input  
+  - Expected output  
+  - Edge-case variants  
 
 ### 5.4 Priority Testing Areas
 
-- Face ingestion and database persistence  
-- Embedding generation and consistency  
-- Clustering and prediction logic  
-- Global Person Registry synchronization  
-- File IO, metadata extraction, and path-normalization logic  
+- Ingestion and DB persistence  
+- Embedding generation  
+- Clustering and prediction  
+- Registry synchronization  
+- Metadata extraction and file handling  
 
 ---
 
 ## 6. Documentation Practices
 
-Update documentation whenever behavior or architecture changes:
+Documentation must always be kept up to date.
 
 ### 6.1 Docstrings
-- Required for all public classes, functions, and modules.
-- Must describe parameters, return values, side effects.
+
+- Required for all public functions, classes, and modules.
+- Describe parameters, return values, behavior, side effects.
 
 ### 6.2 Markdown Documentation
-- Update `README.md`, `requirements.md`, `design.md`, `plan.md`, or similar when changes affect system-level behavior.
-- Document decisions behind architectural changes.
-- Provide small usage examples when helpful.
 
-### 6.3 Accuracy Guarantee
-Documentation must always reflect reality.  
-If code changes contradict documentation, update the documentation.
+Update markdown files when behavior or architecture changes:
+
+- `README.md`
+- `requirements.md`
+- `design.md`
+- `plan.md`
+- `architecture.md` or others as relevant
+
+Provide examples or diagrams when helpful.
+
+### 6.3 Accuracy Commitment
+
+If a code change invalidates existing documentation, update the documentation accordingly.  
+No inconsistencies allowed.
 
 ---
 
@@ -199,59 +212,59 @@ If code changes contradict documentation, update the documentation.
 
 You may be asked to:
 
-- Implement or refactor:
+- Implement or refactor modules involving:
   - Face ingestion
-  - Embedding generation
-  - Clustering
+  - Embedding creation
+  - Clustering algorithms
   - Prediction workflows
-  - Person registry logic
-- Improve or extend unit tests and fixtures  
-- Add DB abstractions or schema upgrades  
-- Write migration utilities  
-- Create or maintain CLI helpers  
-- Enhance error handling or logging  
+  - Global Person Registry logic
+- Add or improve tests  
+- Adjust DB schema or write migration utilities  
+- Improve reliability, error handling, and performance  
+- Write CLI helpers if useful  
 
-Prefer **incremental**, **safe**, and **well-tested** changes.
+Changes should always be incremental, safe, and thoroughly tested.
 
 ---
 
 ## 8. Response Style & Interaction Pattern
 
-When the user requests a change:
+When responding to tasks:
 
-1. Restate your understanding of the task succinctly.  
-2. Check whether a suitable branch exists or create a new one.  
-3. Provide a structured plan for the change.  
-4. Propose code modifications with explanations.  
-5. Propose or generate required tests (especially for bug fixes).  
-6. Propose documentation updates.  
-7. Keep all responses focused and within the project’s context.  
+1. Briefly restate your understanding of the request.  
+2. Confirm or create the correct branch.  
+3. Propose a clear, structured implementation plan.  
+4. Provide code changes in well-organized sections.  
+5. Add or propose necessary test coverage.  
+6. Add or propose documentation updates.  
+7. Keep responses strictly aligned with the project's architecture, workflows, and quality standards.
 
 ---
 
 ## 9. Non-Goals
 
-- Do not modify or commit to `main` directly.  
-- Do not introduce new frameworks unless explicitly requested.  
-- Do not write untested code.  
-- Do not bypass documentation updates.  
-- Do not introduce unnecessary complexity.
+- Do not write or modify code on `main`.  
+- Do not introduce frameworks without explicit instruction.  
+- Do not create untested, undocumented changes.  
+- Do not bypass linting or tests.  
+- Do not create one-off hacks that break architecture consistency.
 
 ---
 
 ## 10. Summary
 
-You are a careful, branch-based, test-driven coding agent.
+You are a rigorous, branch-based, test-driven coding agent.
 
 You must:
 
-- Use `uv` for all Python operations  
+- Use `uv` for everything  
 - Never touch `main` directly  
-- Create or continue appropriate branches  
+- Create appropriate feature/fix/refactor branches  
+- Use type hints everywhere possible  
 - Always write tests for bug fixes  
-- Maintain and update documentation  
-- Preserve architectural consistency  
-- Deliver incremental, reviewable, high-quality work  
+- Maintain documentation accuracy  
+- Preserve architectural clarity  
+- Deliver incremental, well-tested improvements  
 
-This ensures long-term maintainability, reliability, and clarity in the Face & Names v2 project.
+This ensures long-term maintainability, correctness, and reliability in the Face & Names v2 project.
 ```
