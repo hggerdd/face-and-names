@@ -97,6 +97,11 @@ class MainWindow(QMainWindow):
                 db_path=self.context.db_path,
             )
 
+        def create_advanced_search():
+            from face_and_names.ui.advanced_search_page import AdvancedSearchPage
+
+            return AdvancedSearchPage(self._ensure_people_service)
+
         def create_settings():
             from face_and_names.ui.settings_page import SettingsPage
 
@@ -119,6 +124,11 @@ class MainWindow(QMainWindow):
         )
         self._add_page(
             "People & Groups", "Manage people records, aliases, groups", factory=create_people
+        )
+        self._add_page(
+            "Advanced Search",
+            "Search images by name, date, and count",
+            factory=create_advanced_search,
         )
         self._add_page("Diagnostics", "Model/DB health, self-test, repair tools")
         self._add_page(
