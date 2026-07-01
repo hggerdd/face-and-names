@@ -4,7 +4,7 @@ All legacy code has been removed. This repository is now a clean slate for the v
 
 ## What remains
 - Requirements source of truth: `docs/requirements.md`
-- Legacy artifacts kept for reference only: model weights in `face_recognition_models`, sample data such as `faces.db`, and historical notes in `commit-notes.md`.
+- Legacy artifacts kept for reference only (not used by current code): model weights in `face_recognition_models/` (e.g., `face_classifier.joblib`, `face_encoder_complete.pth`, `mtcnn_complete.pth`, `label_encoder.joblib`, `model_config.json`), sample data such as `faces.db`, and historical notes in `commit-notes.md`. Active model artifacts live under `model/` and use `FacenetEmbedder`/`InceptionResnetV1`.
 
 ## Next steps before coding
 1) Confirm the target tech stack and project layout (app, services, tests, tooling).

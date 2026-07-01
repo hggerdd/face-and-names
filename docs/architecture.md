@@ -10,7 +10,9 @@
 - `PredictionService`: loads model artifacts from `model/` (FaceNet classifier) for batch + inline; handles device fallback.
 - `ClusteringService`: DBSCAN/KMeans with feature sources pHash/raw/FaceNet embedding/ArcFace ONNX (falls back to FaceNet if ArcFace missing); writes cluster_ids.
 - `PeopleService`: CRUD/merge people + groups backed by registry; cascades merges/renames to faces/groups.
-- `Diagnostics/Export`: health checks for models/DB/device and portable exports/imports as needed.
+- `FacesWorkspaceController`: **Placeholder (not yet implemented).** The unified Faces workspace described in FR-064/FR-067 is planned; current Faces functionality lives in `ui/faces_page.py`.
+- `ExportImportService`: **Placeholder (raises `NotImplementedError`).** Portable export/import (FR-055) is planned but not yet functional.
+- `DiagnosticsService`: **Placeholder (raises `NotImplementedError`).** Health checks for models/DB/device (FR-048) are planned but not yet functional. The UI has a "Diagnostics" nav entry without a dedicated page.
 
 ## Data Flow
 - Ingest: select folders → create import session → for each file: skip if relative path exists → normalize/orient → hash → metadata → thumbnail → detect faces → save crops → inline predict if model loaded → progress/cancel/checkpoint.
@@ -32,3 +34,11 @@
 ## Testing/Resilience
 - Unit/integration tests cover ingest skip rules, registry sync, clustering, prediction.
 - Background jobs cancellable/resumable; health checks surface missing models and log failures.
+
+## Implementation Status (placeholders)
+The following components exist as scaffolds only and raise `NotImplementedError`:
+- `services/faces_workspace_controller.py` — unified Faces workspace (FR-064/FR-067); current Faces UI lives in `ui/faces_page.py`.
+- `services/export_import_service.py` — portable export/import (FR-055).
+- `services/diagnostics_service.py` — diagnostics/health checks (FR-048); the UI nav entry "Diagnostics" has no dedicated page yet.
+
+Legacy artifacts under `face_recognition_models/` (e.g., `face_classifier.joblib`, `face_encoder_complete.pth`, `mtcnn_complete.pth`, `label_encoder.joblib`, `model_config.json`) are **not** used by the current code. The active model artifacts live under `model/` and use `FacenetEmbedder`/`InceptionResnetV1`.

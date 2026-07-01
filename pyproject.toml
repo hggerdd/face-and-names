@@ -3,7 +3,7 @@ name = "face-and-names"
 version = "0.0.0"
 description = "Face-and-Names v2 (greenfield rewrite) - PyQt desktop app for ingesting, detecting, clustering, and managing faces."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [
   { name = "Project Team" }

@@ -194,10 +194,10 @@ Documentation must always be kept up to date.
 Update markdown files when behavior or architecture changes:
 
 - `README.md`
-- `requirements.md`
-- `design.md`
-- `plan.md`
-- `architecture.md` or others as relevant
+- `docs/requirements.md`
+- `docs/architecture.md`
+- `docs/build_run.md`
+- `docs/linting.md`
 
 Provide examples or diagrams when helpful.
 
