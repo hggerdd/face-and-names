@@ -1,7 +1,7 @@
 # Build & Run
 
 ## Environment
-- Python **3.12** (required; enforced via `.python-version`, `pyproject.toml` `requires-python = ">=3.12"`, and `ruff.toml` `target-version = "py312"`). `uv` for env/deps. Create venv: `uv venv .venv` and activate.
+- Python **3.14** (required; enforced via `.python-version`, `pyproject.toml` `requires-python = ">=3.14"`, and `ruff.toml` `target-version = "py313"` — the highest version supported by Ruff). `uv` for env/deps. Create venv: `uv venv .venv` and activate.
 - Install deps: `UV_LINK_MODE=copy uv sync --index-strategy unsafe-best-match` (needed for PyTorch CPU wheels + PyPI).
 - Optional extras:
   - ArcFace ONNX: `uv sync --extra arcface` (installs onnxruntime/opencv; ArcFace model downloaded on first use or place `arcface_r100_v1.onnx` in cwd).

@@ -3,23 +3,24 @@ name = "face-and-names"
 version = "0.0.0"
 description = "Face-and-Names v2 (greenfield rewrite) - PyQt desktop app for ingesting, detecting, clustering, and managing faces."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = { file = "LICENSE" }
 authors = [
   { name = "Project Team" }
 ]
 dependencies = [
-  "pyqt6==6.6.1",
-  "pyqt6-qt6==6.6.1",
-  "pillow==10.2.0",
-  "imagehash==4.3.2",
-  "exifread==3.0.0",
-  "markupsafe==2.1.5",
-  "scikit-learn==1.5.2",
-  "torch==2.2.2+cpu",
-  "torchvision==0.17.2+cpu",
-  "facenet-pytorch==2.6.0",
-  "ultralytics==8.3.10",
+  "pyqt6>=6.6.1",
+  "pyqt6-qt6>=6.6.1",
+  "pillow>=11.0.0",
+  "imagehash>=4.3.2",
+  "exifread>=3.0.0",
+  "markupsafe>=2.1.5",
+  "scikit-learn>=1.7.0",
+  "numpy>=2.0.0",
+  "torch>=2.2.0",
+  "torchvision>=0.17.2",
+  "facenet-pytorch>=2.5.3",
+  "ultralytics>=8.4.0",
   "ruff>=0.14.5",
   "onnxruntime>=1.23.2",
   "opencv-python>=4.11.0.86",
