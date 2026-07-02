@@ -36,6 +36,7 @@ SQLite database under the selected DB Root and keeps processing local by default
 - Prediction Model Training: trains model artifacts from verified faces.
 - Prediction Review: reviews and accepts model predictions.
 - Clustering: runs clustering jobs and reviews clusters.
+- Diagnostics: checks database health, schema version, registry, model artifacts, and detector weights.
 - Settings: app preferences, worker caps, and paths.
 
 Pages that are only scaffolds are intentionally hidden from the main navigation until

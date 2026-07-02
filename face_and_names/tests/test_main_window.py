@@ -32,7 +32,7 @@ def main_window_context(tmp_path: Path) -> AppContext:
     )
 
 
-def test_main_window_starts_on_home_and_hides_unimplemented_pages(
+def test_main_window_starts_on_home_and_shows_implemented_diagnostics(
     main_window_context: AppContext, qtbot
 ) -> None:
     window = MainWindow(main_window_context)
@@ -42,7 +42,7 @@ def test_main_window_starts_on_home_and_hides_unimplemented_pages(
 
     assert nav_items[0] == "Home"
     assert window.nav.currentItem().text() == "Home"
-    assert "Diagnostics" not in nav_items
+    assert "Diagnostics" in nav_items
 
 
 def test_home_page_can_navigate_to_import(main_window_context: AppContext, qtbot) -> None:
@@ -52,3 +52,13 @@ def test_home_page_can_navigate_to_import(main_window_context: AppContext, qtbot
     window._navigate_to("Import")
 
     assert window.nav.currentItem().text() == "Import"
+
+
+def test_main_window_can_load_diagnostics_page(main_window_context: AppContext, qtbot) -> None:
+    window = MainWindow(main_window_context)
+    qtbot.addWidget(window)
+
+    window._navigate_to("Diagnostics")
+
+    assert window.nav.currentItem().text() == "Diagnostics"
+    assert "Diagnostics" in window._pages

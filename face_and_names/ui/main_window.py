@@ -103,6 +103,11 @@ class MainWindow(QMainWindow):
 
             return AdvancedSearchPage(self._ensure_people_service)
 
+        def create_diagnostics():
+            from face_and_names.ui.diagnostics_page import DiagnosticsPage
+
+            return DiagnosticsPage(self.context)
+
         def create_settings():
             from face_and_names.ui.settings_page import SettingsPage
 
@@ -145,6 +150,11 @@ class MainWindow(QMainWindow):
         )
         self._add_page(
             "Clustering", "Configure and run clustering jobs.", factory=create_clustering
+        )
+        self._add_page(
+            "Diagnostics",
+            "Check DB, registry, model artifacts, and detector setup.",
+            factory=create_diagnostics,
         )
         self._add_page(
             "Settings",

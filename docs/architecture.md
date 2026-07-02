@@ -12,7 +12,7 @@
 - `PeopleService`: CRUD/merge people + groups backed by registry; cascades merges/renames to faces/groups.
 - `FacesWorkspaceController`: Controller for the current Faces workspace. It centralizes folder/image/face queries, workspace mode filters (all/unnamed/predicted/clustered), summary counts, face assignment/deletion, person creation, and original-image lookup so `ui/faces_page.py` can focus on widgets/rendering. The larger unified Faces workspace described in FR-064/FR-067 is being built incrementally.
 - `ExportImportService`: **Placeholder (raises `NotImplementedError`).** Portable export/import (FR-055) is planned but not yet functional.
-- `DiagnosticsService`: **Placeholder (raises `NotImplementedError`).** Health checks for models/DB/device (FR-048) are planned but not yet functional. Diagnostics is intentionally hidden from the main navigation until a real page exists.
+- `DiagnosticsService`: Lightweight health checks for SQLite integrity/schema, person registry presence, model artifacts, detector weights, and core data counts. The Diagnostics page exposes these checks without loading heavy ML models.
 
 ## Data Flow
 - Ingest: select folders → create import session → for each file: skip if relative path exists → normalize/orient → hash → metadata → thumbnail → detect faces → save crops → inline predict if model loaded → progress/cancel/checkpoint.
@@ -40,6 +40,5 @@ The first unified Faces workspace slice is implemented in `ui/faces_page.py` thr
 
 The following components exist as scaffolds only and raise `NotImplementedError`:
 - `services/export_import_service.py` — portable export/import (FR-055).
-- `services/diagnostics_service.py` — diagnostics/health checks (FR-048); hidden from navigation until implemented.
 
 Legacy artifacts under `face_recognition_models/` (e.g., `face_classifier.joblib`, `face_encoder_complete.pth`, `mtcnn_complete.pth`, `label_encoder.joblib`, `model_config.json`) are **not** used by the current code. The active model artifacts live under `model/` and use `FacenetEmbedder`/`InceptionResnetV1`.
