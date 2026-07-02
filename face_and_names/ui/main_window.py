@@ -1,11 +1,8 @@
-"""
-Main window shell for Face-and-Names v2.
-
-Creates the navigation frame and placeholder views aligned to docs/ui_wireframes.md.
-"""
+"""Main window shell for Face-and-Names v2."""
 
 from __future__ import annotations
 
+import logging
 from typing import Callable, Dict
 
 from PyQt6.QtCore import Qt
@@ -15,6 +12,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -24,9 +22,11 @@ from face_and_names.app_context import AppContext
 from face_and_names.models.db import initialize_database
 from face_and_names.services.people_service import PeopleService
 
+LOGGER = logging.getLogger(__name__)
+
 
 class MainWindow(QMainWindow):
-    """Initial UI shell with nav + stacked placeholders."""
+    """Main application shell with workflow-oriented navigation."""
 
     def __init__(self, context: AppContext) -> None:
         super().__init__()
@@ -56,8 +56,9 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        # Factories for lazy loading
-        # FacesPage is default, so we can load it eagerly or lazy-but-immediately-triggered
+        def create_home():
+            return HomePage(self)
+
         def create_faces():
             from face_and_names.ui.faces_page import FacesPage
 
@@ -108,31 +109,47 @@ class MainWindow(QMainWindow):
             return SettingsPage(self.context)
 
         self._add_page(
-            "Faces", "Faces workspace: clusters/predictions/people views", factory=create_faces
+            "Home",
+            "Open the recommended workflow and jump to the next task.",
+            factory=create_home,
         )
         self._add_page(
-            "Import", "Ingest photos from DB Root with progress/resume", factory=create_import
-        )
-        self._add_page("Clustering", "Configure and run clustering jobs", factory=create_clustering)
-        self._add_page(
-            "Prediction Model Training",
-            "Prepare and train prediction models",
-            factory=create_training,
+            "Import",
+            "Choose a DB Root and ingest photos before reviewing faces.",
+            factory=create_import,
         )
         self._add_page(
-            "Prediction Review", "Review and accept model predictions", factory=create_review
+            "Faces",
+            "Browse imported folders, inspect images, and review detected face tiles.",
+            factory=create_faces,
         )
         self._add_page(
-            "People & Groups", "Manage people records, aliases, groups", factory=create_people
+            "People & Groups",
+            "Manage people records, aliases, groups, and assigned faces.",
+            factory=create_people,
         )
         self._add_page(
             "Advanced Search",
-            "Search images by name, date, and count",
+            "Search images by name, date, and face count.",
             factory=create_advanced_search,
         )
-        self._add_page("Diagnostics", "Model/DB health, self-test, repair tools")
         self._add_page(
-            "Settings", "App preferences, device/worker caps, paths", factory=create_settings
+            "Prediction Model Training",
+            "Train a model from verified named faces.",
+            factory=create_training,
+        )
+        self._add_page(
+            "Prediction Review",
+            "Review, filter, and accept model predictions.",
+            factory=create_review,
+        )
+        self._add_page(
+            "Clustering", "Configure and run clustering jobs.", factory=create_clustering
+        )
+        self._add_page(
+            "Settings",
+            "Edit app preferences, worker caps, and paths.",
+            factory=create_settings,
         )
 
         # Default selection
@@ -174,18 +191,15 @@ class MainWindow(QMainWindow):
         if name in self._factories:
             factory = self._factories.pop(name)
             try:
-                # Show wait cursor or similar if needed, but for now just create
                 real_widget = factory()
-                # Replace placeholder in stack
                 old_widget = self.stacked.widget(index)
                 self.stacked.removeWidget(old_widget)
                 self.stacked.insertWidget(index, real_widget)
                 self.stacked.setCurrentIndex(index)
                 self._pages[name] = real_widget
-                # old_widget is garbage collected
             except Exception as exc:
-                print(f"Failed to load page {name}: {exc}")
-                # Keep placeholder but maybe update text?
+                LOGGER.exception("Failed to load page %s", name)
+                self._show_page_load_error(name, exc, index)
                 return
 
         if name in self._pages:
@@ -195,11 +209,34 @@ class MainWindow(QMainWindow):
                 try:
                     page.refresh_data()
                 except Exception:
-                    pass
+                    LOGGER.exception("Failed to refresh page %s", name)
 
     def _replace_context(self, new_context: AppContext) -> None:
         """Replace shared context when DB Root changes."""
         self.context = new_context
+
+    def _navigate_to(self, page_name: str) -> None:
+        """Select a navigation item by name."""
+        for row in range(self.nav.count()):
+            if self.nav.item(row).text() == page_name:
+                self.nav.setCurrentRow(row)
+                return
+
+    def _show_page_load_error(self, name: str, exc: Exception, index: int) -> None:
+        """Replace a failed lazy page with a visible error panel."""
+        page = QWidget(self)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel(f"<b>{name}</b>"))
+        message = QLabel(f"Could not load this page: {exc}")
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        layout.addStretch(1)
+        page.setLayout(layout)
+        old_widget = self.stacked.widget(index)
+        self.stacked.removeWidget(old_widget)
+        self.stacked.insertWidget(index, page)
+        self.stacked.setCurrentIndex(index)
+        self._pages[name] = page
 
     def _ensure_people_service(self) -> PeopleService | None:
         """
@@ -221,3 +258,51 @@ class MainWindow(QMainWindow):
             return self.context.people_service
         except Exception:
             return None
+
+
+class HomePage(QWidget):
+    """Workflow-oriented landing page for returning users."""
+
+    def __init__(self, window: MainWindow) -> None:
+        super().__init__(window)
+        self.window = window
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        title = QLabel("<h2>Face-and-Names</h2>")
+        intro = QLabel(
+            "Recommended workflow: choose a DB Root, import photos, review detected faces, "
+            "maintain people, then train and review predictions."
+        )
+        intro.setWordWrap(True)
+
+        layout.addWidget(title)
+        layout.addWidget(intro)
+
+        steps = [
+            ("1. Import photos", "Import"),
+            ("2. Review faces", "Faces"),
+            ("3. Manage people", "People & Groups"),
+            ("4. Train model", "Prediction Model Training"),
+            ("5. Review predictions", "Prediction Review"),
+        ]
+        for label, target in steps:
+            button = QPushButton(label)
+            button.setMinimumHeight(34)
+            button.clicked.connect(
+                lambda checked=False, page=target: self.window._navigate_to(page)
+            )
+            layout.addWidget(button)
+
+        note = QLabel(
+            "Clustering, advanced search, and settings are available from the navigation when needed."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addStretch(1)
+        self.setLayout(layout)

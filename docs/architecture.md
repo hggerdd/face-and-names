@@ -12,7 +12,7 @@
 - `PeopleService`: CRUD/merge people + groups backed by registry; cascades merges/renames to faces/groups.
 - `FacesWorkspaceController`: **Placeholder (not yet implemented).** The unified Faces workspace described in FR-064/FR-067 is planned; current Faces functionality lives in `ui/faces_page.py`.
 - `ExportImportService`: **Placeholder (raises `NotImplementedError`).** Portable export/import (FR-055) is planned but not yet functional.
-- `DiagnosticsService`: **Placeholder (raises `NotImplementedError`).** Health checks for models/DB/device (FR-048) are planned but not yet functional. The UI has a "Diagnostics" nav entry without a dedicated page.
+- `DiagnosticsService`: **Placeholder (raises `NotImplementedError`).** Health checks for models/DB/device (FR-048) are planned but not yet functional. Diagnostics is intentionally hidden from the main navigation until a real page exists.
 
 ## Data Flow
 - Ingest: select folders → create import session → for each file: skip if relative path exists → normalize/orient → hash → metadata → thumbnail → detect faces → save crops → inline predict if model loaded → progress/cancel/checkpoint.
@@ -39,6 +39,6 @@
 The following components exist as scaffolds only and raise `NotImplementedError`:
 - `services/faces_workspace_controller.py` — unified Faces workspace (FR-064/FR-067); current Faces UI lives in `ui/faces_page.py`.
 - `services/export_import_service.py` — portable export/import (FR-055).
-- `services/diagnostics_service.py` — diagnostics/health checks (FR-048); the UI nav entry "Diagnostics" has no dedicated page yet.
+- `services/diagnostics_service.py` — diagnostics/health checks (FR-048); hidden from navigation until implemented.
 
 Legacy artifacts under `face_recognition_models/` (e.g., `face_classifier.joblib`, `face_encoder_complete.pth`, `mtcnn_complete.pth`, `label_encoder.joblib`, `model_config.json`) are **not** used by the current code. The active model artifacts live under `model/` and use `FacenetEmbedder`/`InceptionResnetV1`.
