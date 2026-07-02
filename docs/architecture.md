@@ -10,7 +10,7 @@
 - `PredictionService`: loads model artifacts from `model/` (FaceNet classifier) for batch + inline; handles device fallback.
 - `ClusteringService`: DBSCAN/KMeans with feature sources pHash/raw/FaceNet embedding/ArcFace ONNX (falls back to FaceNet if ArcFace missing); writes cluster_ids.
 - `PeopleService`: CRUD/merge people + groups backed by registry; cascades merges/renames to faces/groups.
-- `FacesWorkspaceController`: First implemented controller for the current Faces page. It centralizes folder/image/face queries, face assignment/deletion, person creation, and original-image lookup so `ui/faces_page.py` can focus on widgets/rendering. The larger unified Faces workspace described in FR-064/FR-067 is still planned.
+- `FacesWorkspaceController`: Controller for the current Faces workspace. It centralizes folder/image/face queries, workspace mode filters (all/unnamed/predicted/clustered), summary counts, face assignment/deletion, person creation, and original-image lookup so `ui/faces_page.py` can focus on widgets/rendering. The larger unified Faces workspace described in FR-064/FR-067 is being built incrementally.
 - `ExportImportService`: **Placeholder (raises `NotImplementedError`).** Portable export/import (FR-055) is planned but not yet functional.
 - `DiagnosticsService`: **Placeholder (raises `NotImplementedError`).** Health checks for models/DB/device (FR-048) are planned but not yet functional. Diagnostics is intentionally hidden from the main navigation until a real page exists.
 
@@ -36,6 +36,8 @@
 - Background jobs cancellable/resumable; health checks surface missing models and log failures.
 
 ## Implementation Status (placeholders)
+The first unified Faces workspace slice is implemented in `ui/faces_page.py` through shared mode filters and workspace summary counts. Cluster-specific side panels, prediction histograms, and global start/stop job actions are still planned.
+
 The following components exist as scaffolds only and raise `NotImplementedError`:
 - `services/export_import_service.py` — portable export/import (FR-055).
 - `services/diagnostics_service.py` — diagnostics/health checks (FR-048); hidden from navigation until implemented.

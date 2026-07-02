@@ -9,7 +9,11 @@ from PyQt6.QtCore import Qt
 
 from face_and_names.app_context import AppContext, EventBus
 from face_and_names.models.db import initialize_database
-from face_and_names.models.repositories import ImageRepository, ImportSessionRepository
+from face_and_names.models.repositories import (
+    FaceRepository,
+    ImageRepository,
+    ImportSessionRepository,
+)
 from face_and_names.services.person_registry import default_registry_path
 from face_and_names.ui.faces_page import FacesPage
 
@@ -167,3 +171,33 @@ def test_faces_page_selecting_image_shows_preview(
     # Check preview scene has items
     assert len(faces_page.preview.scene().items()) > 0
     assert "0 faces" in faces_page.status.text()
+
+
+def test_faces_page_mode_filter_limits_image_list(
+    faces_page: FacesPage, conn: sqlite3.Connection, qtbot
+) -> None:
+    _seed_images(conn, "pics", 2)
+    image_id = conn.execute(
+        "SELECT id FROM image WHERE sub_folder = ? AND filename = ?",
+        ("pics", "img0.jpg"),
+    ).fetchone()[0]
+    FaceRepository(conn).add(
+        image_id=image_id,
+        bbox_abs=(1.0, 2.0, 10.0, 12.0),
+        bbox_rel=(0.01, 0.02, 0.1, 0.12),
+        face_crop_blob=b"face",
+        provenance="detected",
+        person_id=None,
+    )
+    conn.commit()
+    faces_page.refresh_data()
+
+    root = faces_page.tree.topLevelItem(0)
+    faces_page.tree.setCurrentItem(root.child(0))
+    assert faces_page.image_list.count() == 2
+
+    faces_page.mode_combo.setCurrentIndex(1)
+
+    assert faces_page.mode_combo.currentData() == "unnamed"
+    assert faces_page.image_list.count() == 1
+    assert faces_page.image_list.item(0).text() == "img0.jpg"

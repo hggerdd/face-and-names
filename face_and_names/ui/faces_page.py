@@ -7,6 +7,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
@@ -32,6 +33,7 @@ from face_and_names.app_context import AppContext
 from face_and_names.services.faces_workspace_controller import (
     FacesWorkspaceController,
     ImageRecord,
+    WorkspaceMode,
 )
 from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
 
@@ -82,6 +84,13 @@ class FacesPage(QWidget):
         self.image_list.setUniformItemSizes(True)
         self.preview = FaceImageView()
         self.status = QLabel("Select a folder")
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("All faces", userData="all")
+        self.mode_combo.addItem("Unnamed", userData="unnamed")
+        self.mode_combo.addItem("With prediction", userData="predicted")
+        self.mode_combo.addItem("Clustered", userData="clustered")
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self.summary_label = QLabel("")
         self.load_more_btn = QPushButton("Load more")
         self.load_more_btn.clicked.connect(self._load_more)
         self.load_more_btn.setEnabled(False)
@@ -101,8 +110,14 @@ class FacesPage(QWidget):
         self.face_tiles_area.setWidget(self.face_tiles_inner)
         self.page_size = 200
         self.current_folder: str = ""
+        self.current_mode: WorkspaceMode = "all"
         self.current_offset = 0
         self.total_images = 0
+
+        workspace_controls = QHBoxLayout()
+        workspace_controls.addWidget(QLabel("Mode:"))
+        workspace_controls.addWidget(self.mode_combo)
+        workspace_controls.addWidget(self.summary_label, stretch=1)
 
         splitter = QSplitter()
         left = QWidget()
@@ -118,6 +133,7 @@ class FacesPage(QWidget):
         splitter.setStretchFactor(1, 1)
 
         root_layout = QVBoxLayout()
+        root_layout.addLayout(workspace_controls)
         root_layout.addWidget(splitter)
         root_layout.addWidget(QLabel("Faces in image:"))
         root_layout.addWidget(self.face_table)
@@ -146,6 +162,7 @@ class FacesPage(QWidget):
         self.current_offset = 0
         self.total_images = 0
         self._load_folders()
+        self._refresh_summary()
 
     def _on_external_refresh(self, *args, **kwargs) -> None:
         """Refresh folders/images when data changes elsewhere."""
@@ -184,11 +201,15 @@ class FacesPage(QWidget):
         self.current_folder = folder or ""
         self.current_offset = 0
         self.image_list.clear()
+        self._refresh_summary()
         self._load_page(reset=True)
 
     def _load_page(self, reset: bool = False) -> None:
         imgs, total = self.controller.load_images(
-            self.current_folder, offset=self.current_offset, limit=self.page_size
+            self.current_folder,
+            offset=self.current_offset,
+            limit=self.page_size,
+            mode=self.current_mode,
         )
         if reset:
             self.image_list.clear()
@@ -201,10 +222,31 @@ class FacesPage(QWidget):
         self.load_more_btn.setEnabled(self.current_offset < self.total_images)
         self.status.setText(
             f"{self.current_offset}/{self.total_images} images in /{self.current_folder or '/'}"
+            f" ({self.mode_combo.currentText()})"
         )
 
     def _load_more(self) -> None:
         self._load_page(reset=False)
+
+    def _on_mode_changed(self) -> None:
+        mode = self.mode_combo.currentData()
+        self.current_mode = mode if mode in {"all", "unnamed", "predicted", "clustered"} else "all"
+        self.current_offset = 0
+        self.image_list.clear()
+        self.face_table.setRowCount(0)
+        self.preview.scene().clear()
+        self._clear_face_tiles()
+        self._refresh_summary()
+        self._load_page(reset=True)
+
+    def _refresh_summary(self) -> None:
+        folder = self.current_folder if self.current_folder else None
+        summary = self.controller.workspace_summary(folder=folder)
+        self.summary_label.setText(
+            f"{summary.images} images | {summary.faces} faces | "
+            f"{summary.unnamed_faces} unnamed | {summary.predicted_faces} predicted | "
+            f"{summary.clustered_faces} clustered"
+        )
 
     def _on_image_selected(self) -> None:
         items = self.image_list.selectedItems()
@@ -222,12 +264,7 @@ class FacesPage(QWidget):
         self.status.setText(f"{rec.filename}: {len(boxes)} faces")
 
     def _load_face_tiles(self, image_id: int) -> None:
-        # Clear existing
-        while self.face_tiles_layout.count():
-            item = self.face_tiles_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+        self._clear_face_tiles()
         for row in self.controller.load_face_tiles(image_id):
             data = FaceTileData(
                 face_id=row.face_id,
@@ -260,6 +297,13 @@ class FacesPage(QWidget):
             )
             self.face_tiles_layout.addWidget(tile)
         self.face_tiles_layout.addStretch(1)
+
+    def _clear_face_tiles(self) -> None:
+        while self.face_tiles_layout.count():
+            item = self.face_tiles_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
 
     def _refresh_after_change(self, image_id: int) -> None:
         self._load_face_tiles(image_id)

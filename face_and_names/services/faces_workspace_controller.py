@@ -5,9 +5,12 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from face_and_names.models.repositories import FaceRepository
 from face_and_names.services.people_service import PeopleService
+
+WorkspaceMode = Literal["all", "unnamed", "predicted", "clustered"]
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,17 @@ class OriginalFaceImage:
     bbox_rel: tuple[float, float, float, float]
 
 
+@dataclass(frozen=True)
+class WorkspaceSummary:
+    """Aggregate counts for the current Faces workspace."""
+
+    images: int
+    faces: int
+    unnamed_faces: int
+    predicted_faces: int
+    clustered_faces: int
+
+
 class FacesWorkspaceController:
     """Coordinate Faces workspace persistence without leaking SQL into widgets."""
 
@@ -68,23 +82,28 @@ class FacesWorkspaceController:
         rows = self.conn.execute("SELECT DISTINCT sub_folder FROM image ORDER BY sub_folder")
         return [str(row[0]) for row in rows.fetchall()]
 
-    def load_images(self, folder: str, offset: int, limit: int) -> tuple[list[ImageRecord], int]:
+    def load_images(
+        self, folder: str, offset: int, limit: int, mode: WorkspaceMode = "all"
+    ) -> tuple[list[ImageRecord], int]:
         """Load a page of image records for one folder."""
+        mode_clause = self._image_mode_clause(mode)
+        params: list[object] = [folder]
         total = int(
             self.conn.execute(
-                "SELECT COUNT(*) FROM image WHERE sub_folder = ?",
-                (folder,),
+                f"SELECT COUNT(*) FROM image i WHERE i.sub_folder = ?{mode_clause}",
+                params,
             ).fetchone()[0]
         )
+        params.extend([limit, offset])
         rows = self.conn.execute(
-            """
+            f"""
             SELECT id, filename, relative_path, thumbnail_blob, width, height
-            FROM image
-            WHERE sub_folder = ?
+            FROM image i
+            WHERE i.sub_folder = ?{mode_clause}
             ORDER BY filename
             LIMIT ? OFFSET ?
             """,
-            (folder, limit, offset),
+            params,
         ).fetchall()
         return [
             ImageRecord(
@@ -97,6 +116,40 @@ class FacesWorkspaceController:
             )
             for row in rows
         ], total
+
+    def workspace_summary(self, folder: str | None = None) -> WorkspaceSummary:
+        """Return workspace counts, optionally scoped to a folder."""
+        image_where = ""
+        face_join_where = ""
+        params: list[object] = []
+        if folder is not None:
+            image_where = "WHERE sub_folder = ?"
+            face_join_where = "WHERE i.sub_folder = ?"
+            params.append(folder)
+
+        images = int(
+            self.conn.execute(f"SELECT COUNT(*) FROM image {image_where}", params).fetchone()[0]
+        )
+        face_rows = self.conn.execute(
+            f"""
+            SELECT
+                COUNT(f.id),
+                SUM(CASE WHEN f.person_id IS NULL THEN 1 ELSE 0 END),
+                SUM(CASE WHEN f.predicted_person_id IS NOT NULL THEN 1 ELSE 0 END),
+                SUM(CASE WHEN f.cluster_id IS NOT NULL THEN 1 ELSE 0 END)
+            FROM face f
+            JOIN image i ON i.id = f.image_id
+            {face_join_where}
+            """,
+            params,
+        ).fetchone()
+        return WorkspaceSummary(
+            images=images,
+            faces=int(face_rows[0] or 0),
+            unnamed_faces=int(face_rows[1] or 0),
+            predicted_faces=int(face_rows[2] or 0),
+            clustered_faces=int(face_rows[3] or 0),
+        )
 
     def load_face_boxes(self, image_id: int) -> list[tuple[float, float, float, float]]:
         """Return relative face boxes for one image."""
@@ -186,3 +239,23 @@ class FacesWorkspaceController:
             image_path=self.db_root / str(rel_path),
             bbox_rel=(float(x), float(y), float(w), float(h)),
         )
+
+    @staticmethod
+    def _image_mode_clause(mode: WorkspaceMode) -> str:
+        if mode == "all":
+            return ""
+        if mode == "unnamed":
+            return (
+                " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id AND f.person_id IS NULL)"
+            )
+        if mode == "predicted":
+            return (
+                " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id "
+                "AND f.predicted_person_id IS NOT NULL)"
+            )
+        if mode == "clustered":
+            return (
+                " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id "
+                "AND f.cluster_id IS NOT NULL)"
+            )
+        raise ValueError(f"Unsupported workspace mode: {mode}")

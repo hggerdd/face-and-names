@@ -34,7 +34,14 @@ def controller(
 
 
 def _seed_image_with_face(
-    conn: sqlite3.Connection, person_id: int | None = None
+    conn: sqlite3.Connection,
+    *,
+    folder: str = "family",
+    filename: str = "img.jpg",
+    hash_byte: int = 0x11,
+    person_id: int | None = None,
+    predicted_person_id: int | None = None,
+    cluster_id: int | None = None,
 ) -> tuple[int, int]:
     sessions = ImportSessionRepository(conn)
     images = ImageRepository(conn)
@@ -42,10 +49,10 @@ def _seed_image_with_face(
     session_id = sessions.create(folder_count=1)
     image_id = images.add(
         import_id=session_id,
-        relative_path="family/img.jpg",
-        sub_folder="family",
-        filename="img.jpg",
-        content_hash=b"\x11" * 32,
+        relative_path=f"{folder}/{filename}",
+        sub_folder=folder,
+        filename=filename,
+        content_hash=bytes([hash_byte]) * 32,
         perceptual_hash=111,
         width=300,
         height=300,
@@ -60,7 +67,9 @@ def _seed_image_with_face(
         bbox_rel=(0.01, 0.02, 0.5, 0.6),
         face_crop_blob=b"face",
         provenance="detected",
+        cluster_id=cluster_id,
         person_id=person_id,
+        predicted_person_id=predicted_person_id,
         prediction_confidence=None,
     )
     conn.commit()
@@ -103,3 +112,78 @@ def test_faces_workspace_controller_assigns_person_and_resolves_original(
     assert original is not None
     assert original.image_path == tmp_path / "family" / "img.jpg"
     assert original.bbox_rel == (0.01, 0.02, 0.5, 0.6)
+
+
+def test_faces_workspace_controller_filters_images_by_workspace_mode(
+    conn: sqlite3.Connection,
+    controller: FacesWorkspaceController,
+    people_service: PeopleService,
+) -> None:
+    named_person_id = people_service.create_person("Ada", "Lovelace")
+    predicted_person_id = people_service.create_person("Grace", "Hopper")
+    _seed_image_with_face(
+        conn,
+        filename="named.jpg",
+        hash_byte=0x21,
+        person_id=named_person_id,
+    )
+    _seed_image_with_face(
+        conn,
+        filename="predicted.jpg",
+        hash_byte=0x22,
+        predicted_person_id=predicted_person_id,
+    )
+    _seed_image_with_face(
+        conn,
+        filename="clustered.jpg",
+        hash_byte=0x23,
+        cluster_id=7,
+    )
+
+    all_images, all_total = controller.load_images("family", offset=0, limit=10)
+    unnamed_images, unnamed_total = controller.load_images(
+        "family", offset=0, limit=10, mode="unnamed"
+    )
+    predicted_images, predicted_total = controller.load_images(
+        "family", offset=0, limit=10, mode="predicted"
+    )
+    clustered_images, clustered_total = controller.load_images(
+        "family", offset=0, limit=10, mode="clustered"
+    )
+
+    assert all_total == 3
+    assert [image.filename for image in all_images] == [
+        "clustered.jpg",
+        "named.jpg",
+        "predicted.jpg",
+    ]
+    assert unnamed_total == 2
+    assert [image.filename for image in unnamed_images] == ["clustered.jpg", "predicted.jpg"]
+    assert predicted_total == 1
+    assert predicted_images[0].filename == "predicted.jpg"
+    assert clustered_total == 1
+    assert clustered_images[0].filename == "clustered.jpg"
+
+
+def test_faces_workspace_controller_returns_workspace_summary(
+    conn: sqlite3.Connection,
+    controller: FacesWorkspaceController,
+    people_service: PeopleService,
+) -> None:
+    person_id = people_service.create_person("Ada", "Lovelace")
+    _seed_image_with_face(conn, filename="named.jpg", hash_byte=0x31, person_id=person_id)
+    _seed_image_with_face(
+        conn,
+        filename="predicted-clustered.jpg",
+        hash_byte=0x32,
+        predicted_person_id=person_id,
+        cluster_id=4,
+    )
+
+    summary = controller.workspace_summary(folder="family")
+
+    assert summary.images == 2
+    assert summary.faces == 2
+    assert summary.unnamed_faces == 1
+    assert summary.predicted_faces == 1
+    assert summary.clustered_faces == 1
