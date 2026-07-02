@@ -3,7 +3,7 @@ from __future__ import annotations
 from face_and_names.ui.faces_page import FacesPage
 
 
-class _DummyService:
+class _DummyController:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, str | None]] = []
 
@@ -14,7 +14,7 @@ class _DummyService:
 
 class _DummyPage:
     def __init__(self) -> None:
-        self.people_service = _DummyService()
+        self.controller = _DummyController()
 
 
 def test_faces_page_create_person_signature_matches_tile_callback() -> None:
@@ -22,4 +22,4 @@ def test_faces_page_create_person_signature_matches_tile_callback() -> None:
     # Call unbound method directly with dummy self
     result = FacesPage._create_person(dummy, "Jane", "Doe", None)  # type: ignore[arg-type]
     assert result == 99
-    assert dummy.people_service.calls == [("Jane", "Doe", None)]
+    assert dummy.controller.calls == [("Jane", "Doe", None)]
