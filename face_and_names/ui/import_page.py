@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -31,55 +31,7 @@ from face_and_names.app_context import (
     save_last_db_path,
     save_last_folder,
 )
-from face_and_names.models.db import initialize_database
-from face_and_names.services.ingest_service import IngestOptions, IngestService
-
-
-class IngestWorker(QObject):
-    finished = pyqtSignal(object)
-    progress = pyqtSignal(object)
-
-    def __init__(
-        self,
-        db_root: Path,
-        folders: Sequence[Path],
-        recursive: bool,
-        cancel_event: threading.Event | None = None,
-        checkpoint: dict | None = None,
-        crop_expand_pct: float = 0.05,
-        face_target_size: int = 224,
-        prediction_service=None,
-        detector_weights: Path | None = None,
-    ) -> None:
-        super().__init__()
-        self.db_root = db_root
-        self.folders = folders
-        self.recursive = recursive
-        self.cancel_event = cancel_event
-        self.checkpoint = checkpoint
-        self.crop_expand_pct = crop_expand_pct
-        self.face_target_size = face_target_size
-        self.prediction_service = prediction_service
-        self.detector_weights = detector_weights
-
-    def run(self) -> None:
-        conn = initialize_database(self.db_root / "faces.db")
-        service = IngestService(
-            db_root=self.db_root,
-            conn=conn,
-            crop_expand_pct=self.crop_expand_pct,
-            face_target_size=self.face_target_size,
-            prediction_service=self.prediction_service,
-            detector_weights=self.detector_weights,
-        )
-        progress = service.start_session(
-            self.folders,
-            options=IngestOptions(recursive=self.recursive),
-            progress_cb=self.progress.emit,
-            cancel_event=self.cancel_event,
-            checkpoint=self.checkpoint,
-        )
-        self.finished.emit(progress)
+from face_and_names.ui.workers import IngestWorker
 
 
 class ImportPage(QWidget):
@@ -100,15 +52,15 @@ class ImportPage(QWidget):
         self.source_list.itemChanged.connect(self._on_item_changed)
         self.recursive_checkbox = QCheckBox("Include subfolders (recursive)")
         self.recursive_checkbox.setChecked(True)
-        self.status_label = QLabel("Idle")
+        self.status_label = QLabel("Ready to import.")
         self.folder_label = QLabel("Current folder: -")
-        self.image_label = QLabel("Last image: -")
+        self.image_label = QLabel("Preview image: -")
         self.thumb_label = QLabel()
         self.thumb_label.setFixedSize(160, 160)
         self.thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.face_thumb_labels: list[QLabel] = []
-        self.ingest_button = QPushButton("Start Ingest")
-        self.cancel_button = QPushButton("Cancel")
+        self.ingest_button = QPushButton("Start import")
+        self.cancel_button = QPushButton("Stop import")
         self.cancel_button.setEnabled(False)
         self.refresh_button = QPushButton("Refresh folder list")
         self.refresh_button.clicked.connect(self._load_subfolders)
@@ -121,19 +73,26 @@ class ImportPage(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+        title = QLabel("<h2>Import Photos</h2>")
+        subtitle = QLabel("Choose a DB Root, select folders inside it, then import photos locally.")
+        subtitle.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
 
         # DB root selector
         db_row = QHBoxLayout()
         db_row.addWidget(QLabel("DB Root (SQLite folder):"))
         db_row.addWidget(self.db_path_edit, stretch=1)
-        choose_db = QPushButton("Choose…")
+        choose_db = QPushButton("Choose...")
         choose_db.clicked.connect(self._choose_db_root)
         db_row.addWidget(choose_db)
         layout.addLayout(db_row)
 
         # Source folders list
         src_row = QHBoxLayout()
-        src_row.addWidget(QLabel("Folders under DB Root (check to ingest):"))
+        src_row.addWidget(QLabel("Folders under DB Root:"))
         src_row.addWidget(self.refresh_button)
         layout.addLayout(src_row)
         layout.addWidget(self.source_list)
@@ -196,7 +155,7 @@ class ImportPage(QWidget):
             use_checkpoint = self._last_checkpoint
         self.ingest_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
-        self.status_label.setText("Ingest running…")
+        self.status_label.setText("Import running...")
         recursive = self.recursive_checkbox.isChecked()
 
         self.cancel_event = threading.Event()
@@ -261,7 +220,7 @@ class ImportPage(QWidget):
         if progress.current_folder:
             self.folder_label.setText(f"Current folder: {progress.current_folder}")
         if progress.last_image_name:
-            self.image_label.setText(f"Last 10th image: {progress.last_image_name}")
+            self.image_label.setText(f"Preview image: {progress.last_image_name}")
         if progress.last_thumbnail:
             pixmap = QPixmap()
             if pixmap.loadFromData(progress.last_thumbnail):
@@ -330,4 +289,4 @@ class ImportPage(QWidget):
     def _cancel_ingest(self) -> None:
         if self.cancel_event is not None:
             self.cancel_event.set()
-            self.status_label.setText("Cancellation requested…")
+            self.status_label.setText("Stop requested...")

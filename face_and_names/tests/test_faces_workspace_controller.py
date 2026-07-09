@@ -41,6 +41,7 @@ def _seed_image_with_face(
     hash_byte: int = 0x11,
     person_id: int | None = None,
     predicted_person_id: int | None = None,
+    prediction_confidence: float | None = None,
     cluster_id: int | None = None,
 ) -> tuple[int, int]:
     sessions = ImportSessionRepository(conn)
@@ -70,7 +71,7 @@ def _seed_image_with_face(
         cluster_id=cluster_id,
         person_id=person_id,
         predicted_person_id=predicted_person_id,
-        prediction_confidence=None,
+        prediction_confidence=prediction_confidence,
     )
     conn.commit()
     return image_id, face_id
@@ -187,3 +188,68 @@ def test_faces_workspace_controller_returns_workspace_summary(
     assert summary.unnamed_faces == 1
     assert summary.predicted_faces == 1
     assert summary.clustered_faces == 1
+
+
+def test_faces_workspace_controller_loads_face_page_with_filters(
+    conn: sqlite3.Connection,
+    controller: FacesWorkspaceController,
+    people_service: PeopleService,
+) -> None:
+    person_id = people_service.create_person("Ada", "Lovelace")
+    _seed_image_with_face(conn, filename="named.jpg", hash_byte=0x41, person_id=person_id)
+    _seed_image_with_face(
+        conn,
+        filename="predicted.jpg",
+        hash_byte=0x42,
+        predicted_person_id=person_id,
+        prediction_confidence=0.85,
+    )
+
+    from face_and_names.services.faces_workspace_controller import FaceWorkspaceFilters
+
+    page = controller.load_face_page(
+        FaceWorkspaceFilters(mode="predicted", confidence_min=0.8),
+        offset=0,
+        limit=10,
+    )
+
+    assert page.total == 1
+    assert page.faces[0].filename == "predicted.jpg"
+    assert page.faces[0].predicted_person_id == person_id
+
+
+def test_faces_workspace_controller_accepts_predictions_for_selected_faces(
+    conn: sqlite3.Connection,
+    controller: FacesWorkspaceController,
+    people_service: PeopleService,
+) -> None:
+    person_id = people_service.create_person("Ada", "Lovelace")
+    _, face_id = _seed_image_with_face(
+        conn,
+        filename="predicted.jpg",
+        hash_byte=0x51,
+        predicted_person_id=person_id,
+        prediction_confidence=0.9,
+    )
+
+    changed = controller.accept_predictions([face_id])
+
+    assert changed == 1
+    row = conn.execute("SELECT person_id FROM face WHERE id = ?", (face_id,)).fetchone()
+    assert row == (person_id,)
+
+
+def test_faces_workspace_controller_assigns_person_to_multiple_faces(
+    conn: sqlite3.Connection,
+    controller: FacesWorkspaceController,
+    people_service: PeopleService,
+) -> None:
+    person_id = people_service.create_person("Ada", "Lovelace")
+    _, first_face_id = _seed_image_with_face(conn, filename="a.jpg", hash_byte=0x61)
+    _, second_face_id = _seed_image_with_face(conn, filename="b.jpg", hash_byte=0x62)
+
+    changed = controller.assign_person_to_faces([first_face_id, second_face_id], person_id)
+
+    assert changed == 2
+    rows = conn.execute("SELECT person_id FROM face ORDER BY id").fetchall()
+    assert rows == [(person_id,), (person_id,)]

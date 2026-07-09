@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
         )
         self._add_page(
             "Faces",
-            "Browse imported folders, inspect images, and review detected face tiles.",
+            "Review, filter, and assign faces in the unified workspace.",
             factory=create_faces,
         )
         self._add_page(
@@ -144,12 +144,14 @@ class MainWindow(QMainWindow):
             factory=create_training,
         )
         self._add_page(
-            "Prediction Review",
-            "Review, filter, and accept model predictions.",
+            "Advanced Prediction Review",
+            "Person-specific legacy review tools; prefer Faces for routine review.",
             factory=create_review,
         )
         self._add_page(
-            "Clustering", "Configure and run clustering jobs.", factory=create_clustering
+            "Advanced Clustering",
+            "Run clustering jobs and inspect clusters as an advanced workflow.",
+            factory=create_clustering,
         )
         self._add_page(
             "Diagnostics",
@@ -299,7 +301,7 @@ class HomePage(QWidget):
             ("2. Review faces", "Faces"),
             ("3. Manage people", "People & Groups"),
             ("4. Train model", "Prediction Model Training"),
-            ("5. Review predictions", "Prediction Review"),
+            ("5. Review predictions", "Faces"),
         ]
         for label, target in steps:
             button = QPushButton(label)
@@ -310,7 +312,8 @@ class HomePage(QWidget):
             layout.addWidget(button)
 
         note = QLabel(
-            "Clustering, advanced search, and settings are available from the navigation when needed."
+            "Advanced clustering, advanced prediction review, search, diagnostics, and settings "
+            "are available from the navigation when needed."
         )
         note.setWordWrap(True)
         layout.addWidget(note)

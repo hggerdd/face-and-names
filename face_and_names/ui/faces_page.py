@@ -1,28 +1,25 @@
-"""
-Faces view: shows folders/images from DB with paging and overlays for detected faces.
-"""
+"""Unified Faces workspace with face-first browsing and bulk actions."""
 
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSplitter,
-    QTableWidget,
-    QTableWidgetItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -32,10 +29,11 @@ from PyQt6.QtWidgets import (
 from face_and_names.app_context import AppContext
 from face_and_names.services.faces_workspace_controller import (
     FacesWorkspaceController,
-    ImageRecord,
+    FaceTileRecord,
+    FaceWorkspaceFilters,
     WorkspaceMode,
 )
-from face_and_names.ui.components.face_tile import FaceTile, FaceTileData
+from face_and_names.ui.components.face_tile import FaceTile, FaceTileData, PersonSelectDialog
 
 
 class FaceImageView(QGraphicsView):
@@ -66,10 +64,10 @@ class FaceImageView(QGraphicsView):
 
 
 class FacesPage(QWidget):
-    """
-    Faces tab with folder tree, image list (paged), and preview with face overlays.
-    Paging keeps the UI responsive for large folders until full virtualization is wired.
-    """
+    """Face-first workspace for filtering, reviewing, and assigning faces."""
+
+    PAGE_SIZE = 40
+    GRID_COLUMNS = 5
 
     def __init__(self, context: AppContext) -> None:
         super().__init__()
@@ -78,195 +76,229 @@ class FacesPage(QWidget):
         self.controller = FacesWorkspaceController(
             context.conn, context.db_path.parent, context.people_service
         )
+        self.current_folder: str | None = None
+        self.current_mode: WorkspaceMode = "all"
+        self.current_page = 0
+        self.total_faces = 0
+        self.current_tiles: list[FaceTile] = []
+        self.selected_face_ids: set[int] = set()
+
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
-        self.image_list = QListWidget()
-        self.image_list.setUniformItemSizes(True)
-        self.preview = FaceImageView()
-        self.status = QLabel("Select a folder")
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("All faces", userData="all")
+        self.mode_combo.addItem("All", userData="all")
         self.mode_combo.addItem("Unnamed", userData="unnamed")
-        self.mode_combo.addItem("With prediction", userData="predicted")
+        self.mode_combo.addItem("Predicted", userData="predicted")
         self.mode_combo.addItem("Clustered", userData="clustered")
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self.min_conf = QDoubleSpinBox()
+        self.min_conf.setRange(0.0, 1.0)
+        self.min_conf.setSingleStep(0.01)
+        self.min_conf.setValue(0.0)
+        self.max_conf = QDoubleSpinBox()
+        self.max_conf.setRange(0.0, 1.0)
+        self.max_conf.setSingleStep(0.01)
+        self.max_conf.setValue(1.0)
+        self.differs_checkbox = QCheckBox("Prediction differs")
+        self.refresh_btn = QPushButton("Refresh")
+        self.prev_btn = QPushButton("<")
+        self.next_btn = QPushButton(">")
+        self.page_label = QLabel("Page 1/1")
         self.summary_label = QLabel("")
-        self.load_more_btn = QPushButton("Load more")
-        self.load_more_btn.clicked.connect(self._load_more)
-        self.load_more_btn.setEnabled(False)
-        self.face_table = QTableWidget(0, 3)
-        self.face_table.setHorizontalHeaderLabels(["Person", "Predicted", "Confidence"])
-        self.face_table.horizontalHeader().setStretchLastSection(True)
-        self.face_table.verticalHeader().setVisible(False)
-        self.face_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.face_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.face_tiles_area = QScrollArea()
-        self.face_tiles_area.setWidgetResizable(True)
-        self.face_tiles_inner = QWidget()
-        self.face_tiles_layout = QHBoxLayout()
-        self.face_tiles_layout.setContentsMargins(4, 4, 4, 4)
-        self.face_tiles_layout.setSpacing(8)
-        self.face_tiles_inner.setLayout(self.face_tiles_layout)
-        self.face_tiles_area.setWidget(self.face_tiles_inner)
-        self.page_size = 200
-        self.current_folder: str = ""
-        self.current_mode: WorkspaceMode = "all"
-        self.current_offset = 0
-        self.total_images = 0
+        self.status = QLabel("")
 
-        workspace_controls = QHBoxLayout()
-        workspace_controls.addWidget(QLabel("Mode:"))
-        workspace_controls.addWidget(self.mode_combo)
-        workspace_controls.addWidget(self.summary_label, stretch=1)
+        self.faces_area = QScrollArea()
+        self.faces_area.setWidgetResizable(True)
+        self.faces_inner = QWidget()
+        self.faces_layout = QGridLayout()
+        self.faces_layout.setContentsMargins(8, 8, 8, 8)
+        self.faces_layout.setSpacing(12)
+        self.faces_inner.setLayout(self.faces_layout)
+        self.faces_area.setWidget(self.faces_inner)
 
-        splitter = QSplitter()
-        left = QWidget()
-        left_layout = QVBoxLayout()
-        left_layout.addWidget(QLabel("Folders"))
-        left_layout.addWidget(self.tree)
-        left_layout.addWidget(QLabel("Images"))
-        left_layout.addWidget(self.image_list)
-        left_layout.addWidget(self.load_more_btn)
-        left.setLayout(left_layout)
-        splitter.addWidget(left)
-        splitter.addWidget(self.preview)
-        splitter.setStretchFactor(1, 1)
+        self.context_title = QLabel("<b>Workspace</b>")
+        self.context_counts = QLabel("")
+        self.selection_label = QLabel("0 selected")
+        self.accept_predictions_btn = QPushButton("Accept selected predictions")
+        self.assign_person_btn = QPushButton("Assign selected person")
+        self.clear_names_btn = QPushButton("Clear selected names")
 
-        root_layout = QVBoxLayout()
-        root_layout.addLayout(workspace_controls)
-        root_layout.addWidget(splitter)
-        root_layout.addWidget(QLabel("Faces in image:"))
-        root_layout.addWidget(self.face_table)
-        root_layout.addWidget(QLabel("Face tiles:"))
-        root_layout.addWidget(self.face_tiles_area)
-        root_layout.addWidget(self.status)
-        self.setLayout(root_layout)
-
-        self.tree.itemSelectionChanged.connect(self._on_folder_selected)
-        self.image_list.itemSelectionChanged.connect(self._on_image_selected)
-
+        self._build_ui()
+        self._bind_events()
         self.refresh_data()
-        # Refresh when ingest or clustering completes
         try:
             self.context.events.subscribe("ingest_completed", self._on_external_refresh)
             self.context.events.subscribe("clustering_completed", self._on_external_refresh)
         except Exception:
             pass
 
+    def _build_ui(self) -> None:
+        filters = QHBoxLayout()
+        filters.addWidget(QLabel("Mode:"))
+        filters.addWidget(self.mode_combo)
+        filters.addWidget(QLabel("Confidence:"))
+        filters.addWidget(self.min_conf)
+        filters.addWidget(QLabel("to"))
+        filters.addWidget(self.max_conf)
+        filters.addWidget(self.differs_checkbox)
+        filters.addWidget(self.refresh_btn)
+        filters.addStretch(1)
+
+        left = QWidget()
+        left_layout = QVBoxLayout()
+        left_layout.addWidget(QLabel("Scope"))
+        left_layout.addWidget(self.tree)
+        left.setLayout(left_layout)
+
+        center = QWidget()
+        center_layout = QVBoxLayout()
+        pager = QHBoxLayout()
+        pager.addWidget(self.prev_btn)
+        pager.addWidget(self.page_label)
+        pager.addWidget(self.next_btn)
+        pager.addStretch(1)
+        pager.addWidget(self.summary_label)
+        center_layout.addLayout(pager)
+        center_layout.addWidget(self.faces_area, stretch=1)
+        center_layout.addWidget(self.status)
+        center.setLayout(center_layout)
+
+        right = QWidget()
+        right.setFixedWidth(260)
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(self.context_title)
+        right_layout.addWidget(self.context_counts)
+        right_layout.addWidget(self.selection_label)
+        right_layout.addWidget(self.accept_predictions_btn)
+        right_layout.addWidget(self.assign_person_btn)
+        right_layout.addWidget(self.clear_names_btn)
+        right_layout.addStretch(1)
+        right.setLayout(right_layout)
+
+        splitter = QSplitter()
+        splitter.addWidget(left)
+        splitter.addWidget(center)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(1, 1)
+
+        root = QVBoxLayout()
+        root.addLayout(filters)
+        root.addWidget(splitter, stretch=1)
+        self.setLayout(root)
+
+    def _bind_events(self) -> None:
+        self.tree.itemSelectionChanged.connect(self._on_scope_changed)
+        self.mode_combo.currentIndexChanged.connect(self._reset_and_load)
+        self.min_conf.valueChanged.connect(self._reset_and_load)
+        self.max_conf.valueChanged.connect(self._reset_and_load)
+        self.differs_checkbox.stateChanged.connect(self._reset_and_load)
+        self.refresh_btn.clicked.connect(self.refresh_data)
+        self.prev_btn.clicked.connect(self._prev_page)
+        self.next_btn.clicked.connect(self._next_page)
+        self.accept_predictions_btn.clicked.connect(self._accept_selected_predictions)
+        self.assign_person_btn.clicked.connect(self._assign_selected_person)
+        self.clear_names_btn.clicked.connect(self._clear_selected_names)
+
     def refresh_data(self) -> None:
-        """Reload folders/images (supports DB resets and tab activation)."""
-        self.image_list.clear()
-        self.face_table.setRowCount(0)
-        self.preview.scene().clear()
-        self.current_folder = ""
-        self.current_offset = 0
-        self.total_images = 0
+        """Reload scopes, counts, and the current face page."""
         self._load_folders()
         self._refresh_summary()
+        self._load_face_page()
 
     def _on_external_refresh(self, *args, **kwargs) -> None:
-        """Refresh folders/images when data changes elsewhere."""
         self.refresh_data()
         self.status.setText("Refreshed after external update")
 
     def _load_folders(self) -> None:
+        current = self.current_folder
         self.tree.clear()
-        root = QTreeWidgetItem(["/"])
+        root = QTreeWidgetItem(["All folders"])
+        root.setData(0, Qt.ItemDataRole.UserRole, None)
         self.tree.addTopLevelItem(root)
+        selected_item = root if current is None else None
         for sub in self.controller.list_folders():
             if not sub:
                 continue
             parts = sub.split("/")
             parent = root
-            path_acc = []
+            path_acc: list[str] = []
             for part in parts:
                 path_acc.append(part)
+                path = "/".join(path_acc)
                 existing = None
-                for i in range(parent.childCount()):
-                    if parent.child(i).text(0) == part:
-                        existing = parent.child(i)
+                for index in range(parent.childCount()):
+                    if parent.child(index).text(0) == part:
+                        existing = parent.child(index)
                         break
                 if existing is None:
                     existing = QTreeWidgetItem([part])
-                    existing.setData(0, Qt.ItemDataRole.UserRole, "/".join(path_acc))
+                    existing.setData(0, Qt.ItemDataRole.UserRole, path)
                     parent.addChild(existing)
+                if path == current:
+                    selected_item = existing
                 parent = existing
         self.tree.expandAll()
+        self.tree.setCurrentItem(selected_item or root)
 
-    def _on_folder_selected(self) -> None:
+    def _on_scope_changed(self) -> None:
         items = self.tree.selectedItems()
         if not items:
             return
-        folder = items[0].data(0, Qt.ItemDataRole.UserRole)
-        self.current_folder = folder or ""
-        self.current_offset = 0
-        self.image_list.clear()
-        self._refresh_summary()
-        self._load_page(reset=True)
+        self.current_folder = items[0].data(0, Qt.ItemDataRole.UserRole)
+        self._reset_and_load()
 
-    def _load_page(self, reset: bool = False) -> None:
-        imgs, total = self.controller.load_images(
-            self.current_folder,
-            offset=self.current_offset,
-            limit=self.page_size,
-            mode=self.current_mode,
-        )
-        if reset:
-            self.image_list.clear()
-        for rec in imgs:
-            item = QListWidgetItem(rec.filename)
-            item.setData(Qt.ItemDataRole.UserRole, rec)
-            self.image_list.addItem(item)
-        self.current_offset += len(imgs)
-        self.total_images = total
-        self.load_more_btn.setEnabled(self.current_offset < self.total_images)
-        self.status.setText(
-            f"{self.current_offset}/{self.total_images} images in /{self.current_folder or '/'}"
-            f" ({self.mode_combo.currentText()})"
-        )
-
-    def _load_more(self) -> None:
-        self._load_page(reset=False)
-
-    def _on_mode_changed(self) -> None:
+    def _reset_and_load(self) -> None:
         mode = self.mode_combo.currentData()
         self.current_mode = mode if mode in {"all", "unnamed", "predicted", "clustered"} else "all"
-        self.current_offset = 0
-        self.image_list.clear()
-        self.face_table.setRowCount(0)
-        self.preview.scene().clear()
-        self._clear_face_tiles()
+        self.current_page = 0
         self._refresh_summary()
-        self._load_page(reset=True)
+        self._load_face_page()
 
-    def _refresh_summary(self) -> None:
-        folder = self.current_folder if self.current_folder else None
-        summary = self.controller.workspace_summary(folder=folder)
-        self.summary_label.setText(
-            f"{summary.images} images | {summary.faces} faces | "
-            f"{summary.unnamed_faces} unnamed | {summary.predicted_faces} predicted | "
-            f"{summary.clustered_faces} clustered"
+    def _filters(self) -> FaceWorkspaceFilters:
+        return FaceWorkspaceFilters(
+            folder=self.current_folder,
+            mode=self.current_mode,
+            confidence_min=float(self.min_conf.value()),
+            confidence_max=float(self.max_conf.value()),
+            differs_from_name=self.differs_checkbox.isChecked(),
         )
 
-    def _on_image_selected(self) -> None:
-        items = self.image_list.selectedItems()
-        if not items:
-            return
-        rec: ImageRecord = items[0].data(Qt.ItemDataRole.UserRole)
-        pix = QPixmap()
-        if not pix.loadFromData(rec.thumb):
-            self.status.setText("Failed to load thumbnail")
-            return
-        boxes = self.controller.load_face_boxes(rec.image_id)
-        self.preview.show_image(pix, boxes)
-        self._load_face_table(rec.image_id)
-        self._load_face_tiles(rec.image_id)
-        self.status.setText(f"{rec.filename}: {len(boxes)} faces")
+    def _load_face_page(self) -> None:
+        self._clear_faces()
+        result = self.controller.load_face_page(
+            self._filters(),
+            offset=self.current_page * self.PAGE_SIZE,
+            limit=self.PAGE_SIZE,
+        )
+        self.total_faces = result.total
+        total_pages = max(1, (self.total_faces + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        if self.current_page >= total_pages:
+            self.current_page = max(0, total_pages - 1)
+            result = self.controller.load_face_page(
+                self._filters(),
+                offset=self.current_page * self.PAGE_SIZE,
+                limit=self.PAGE_SIZE,
+            )
+        self.page_label.setText(f"Page {self.current_page + 1}/{total_pages}")
+        self.prev_btn.setEnabled(self.current_page > 0)
+        self.next_btn.setEnabled(self.current_page < total_pages - 1)
+        for index, row in enumerate(result.faces):
+            tile = self._build_face_tile(row)
+            self.faces_layout.addWidget(
+                tile,
+                index // self.GRID_COLUMNS,
+                index % self.GRID_COLUMNS,
+            )
+            self.current_tiles.append(tile)
+            self.selected_face_ids.add(row.face_id)
+        self._update_context_panel()
+        if not result.faces:
+            self.status.setText("No faces match the current filters.")
+        else:
+            self.status.setText(f"Showing {len(result.faces)} of {self.total_faces} faces.")
 
-    def _load_face_tiles(self, image_id: int) -> None:
-        self._clear_face_tiles()
-        for row in self.controller.load_face_tiles(image_id):
-            data = FaceTileData(
+    def _build_face_tile(self, row: FaceTileRecord) -> FaceTile:
+        tile = FaceTile(
+            FaceTileData(
                 face_id=row.face_id,
                 person_id=row.person_id,
                 person_name=row.person_name,
@@ -274,46 +306,95 @@ class FacesPage(QWidget):
                 predicted_name=row.predicted_name,
                 confidence=row.confidence,
                 crop=row.crop,
-            )
-            tile = FaceTile(
-                data,
-                delete_face=self._delete_face,
-                assign_person=self._assign_person,
-                list_persons=self.people_service.list_people,
-                create_person=self._create_person,
-                rename_person=self.people_service.rename_person,
-                open_original=self._open_original_image,
-                confirm_delete=self._confirm_delete_enabled(),
-            )
-            tile.deleteCompleted.connect(self._on_face_deleted)
-            tile.personAssigned.connect(
-                lambda fid, pid, img_id=image_id: self._refresh_after_change(img_id)
-            )
-            tile.personCreated.connect(
-                lambda _, __, img_id=image_id: self._refresh_after_change(img_id)
-            )
-            tile.personRenamed.connect(
-                lambda _, __, img_id=image_id: self._refresh_after_change(img_id)
-            )
-            self.face_tiles_layout.addWidget(tile)
-        self.face_tiles_layout.addStretch(1)
+            ),
+            delete_face=self._delete_face,
+            assign_person=self._assign_person,
+            list_persons=self.people_service.list_people,
+            create_person=self._create_person,
+            rename_person=self.people_service.rename_person,
+            open_original=self._open_original_image,
+            confirm_delete=self._confirm_delete_enabled(),
+        )
+        tile.selectionChanged.connect(self._on_tile_selection_changed)
+        tile.deleteCompleted.connect(lambda _face_id: self._reload_after_change())
+        tile.personAssigned.connect(lambda _face_id, _person_id: self._reload_after_change())
+        tile.personCreated.connect(lambda _person_id, _name: self._reload_after_change())
+        tile.personRenamed.connect(lambda _person_id, _name: self._reload_after_change())
+        return tile
 
-    def _clear_face_tiles(self) -> None:
-        while self.face_tiles_layout.count():
-            item = self.face_tiles_layout.takeAt(0)
+    def _clear_faces(self) -> None:
+        self.current_tiles = []
+        self.selected_face_ids.clear()
+        while self.faces_layout.count():
+            item = self.faces_layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
 
-    def _refresh_after_change(self, image_id: int) -> None:
-        self._load_face_tiles(image_id)
-        boxes = self.controller.load_face_boxes(image_id)
-        if self.image_list.selectedItems():
-            rec: ImageRecord = self.image_list.selectedItems()[0].data(Qt.ItemDataRole.UserRole)
-            pix = QPixmap()
-            if pix.loadFromData(rec.thumb):
-                self.preview.show_image(pix, boxes)
-        self._load_face_table(image_id)
+    def _on_tile_selection_changed(self, face_id: int, selected: bool) -> None:
+        if selected:
+            self.selected_face_ids.add(face_id)
+        else:
+            self.selected_face_ids.discard(face_id)
+        self._update_context_panel()
+
+    def _update_context_panel(self) -> None:
+        summary = self.controller.workspace_summary(folder=self.current_folder)
+        self.context_counts.setText(
+            f"{summary.faces} faces\n"
+            f"{summary.unnamed_faces} unnamed\n"
+            f"{summary.predicted_faces} predicted\n"
+            f"{summary.clustered_faces} clustered"
+        )
+        self.summary_label.setText(
+            f"{summary.images} images | {summary.faces} faces | {summary.unnamed_faces} unnamed"
+        )
+        self.selection_label.setText(f"{len(self.selected_face_ids)} selected")
+
+    def _refresh_summary(self) -> None:
+        self._update_context_panel()
+
+    def _prev_page(self) -> None:
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._load_face_page()
+
+    def _next_page(self) -> None:
+        self.current_page += 1
+        self._load_face_page()
+
+    def _selected_ids(self) -> list[int]:
+        return sorted(self.selected_face_ids)
+
+    def _accept_selected_predictions(self) -> None:
+        changed = self.controller.accept_predictions(self._selected_ids())
+        self.status.setText(f"Accepted predictions for {changed} faces.")
+        self._reload_after_change()
+
+    def _assign_selected_person(self) -> None:
+        persons = list(self.people_service.list_people())
+        dialog = PersonSelectDialog(
+            persons=persons,
+            create_person=self._create_person,
+            rename_person=self.people_service.rename_person,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.selected_person_id is None:
+            return
+        changed = self.controller.assign_person_to_faces(
+            self._selected_ids(), dialog.selected_person_id
+        )
+        self.status.setText(f"Assigned person to {changed} faces.")
+        self._reload_after_change()
+
+    def _clear_selected_names(self) -> None:
+        changed = self.controller.assign_person_to_faces(self._selected_ids(), None)
+        self.status.setText(f"Cleared names for {changed} faces.")
+        self._reload_after_change()
+
+    def _reload_after_change(self) -> None:
+        self._refresh_summary()
+        self._load_face_page()
 
     def _delete_face(self, face_id: int) -> None:
         self.controller.delete_face(face_id)
@@ -323,13 +404,6 @@ class FacesPage(QWidget):
 
     def _create_person(self, first: str, last: str, short_name: str | None = None) -> int:
         return self.controller.create_person(first, last, short_name=short_name)
-
-    def _on_face_deleted(self, face_id: int) -> None:
-        # Refresh current image view if visible
-        items = self.image_list.selectedItems()
-        if items:
-            rec: ImageRecord = items[0].data(Qt.ItemDataRole.UserRole)
-            self._refresh_after_change(rec.image_id)
 
     def _open_original_image(self, face_id: int) -> None:
         original = self.controller.get_original_face_image(face_id)
@@ -353,12 +427,3 @@ class FacesPage(QWidget):
         if isinstance(self.context.config, dict):
             return bool(self.context.config.get("ui", {}).get("confirm_delete_face", True))
         return True
-
-    def _load_face_table(self, image_id: int) -> None:
-        rows = self.controller.load_face_table_rows(image_id)
-        self.face_table.setRowCount(len(rows))
-        for idx, row in enumerate(rows):
-            self.face_table.setItem(idx, 0, QTableWidgetItem(row.person_name))
-            self.face_table.setItem(idx, 1, QTableWidgetItem(row.predicted_name))
-            conf = "" if row.confidence is None else f"{row.confidence:.2f}"
-            self.face_table.setItem(idx, 2, QTableWidgetItem(conf))

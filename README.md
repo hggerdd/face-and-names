@@ -21,7 +21,7 @@ SQLite database under the selected DB Root and keeps processing local by default
 3. In the app, use the workflow on the Home page:
 
    - Import photos: choose a DB Root and ingest folders under that root.
-   - Review faces: browse imported folders, images, and detected face tiles.
+   - Review faces: filter the unified face grid, inspect originals, and act on selected faces.
    - Manage people: create and edit people, aliases, groups, and assignments.
    - Train model: train predictions from verified named faces.
    - Review predictions: filter and accept model suggestions.
@@ -30,12 +30,12 @@ SQLite database under the selected DB Root and keeps processing local by default
 
 - Home: recommended workflow for returning users.
 - Import: DB Root selection and photo ingestion.
-- Faces: folder/image browser with face overlays and face tiles.
+- Faces: unified face workspace with scope filters, face grid, selection, bulk actions, and original-image preview.
 - People & Groups: people registry, aliases, groups, timelines, and assigned faces.
 - Advanced Search: searches images by people, dates, and face counts.
 - Prediction Model Training: trains model artifacts from verified faces.
-- Prediction Review: reviews and accepts model predictions.
-- Clustering: runs clustering jobs and reviews clusters.
+- Advanced Prediction Review: legacy prediction review tools while the Faces workspace absorbs this workflow.
+- Advanced Clustering: legacy clustering tools while the Faces workspace absorbs this workflow.
 - Diagnostics: checks database health, schema version, registry, model artifacts, and detector weights.
 - Settings: app preferences, worker caps, and paths.
 
@@ -62,6 +62,11 @@ Run tests and linting before changing behavior:
 uv run --extra dev pytest -q
 uv run ruff check .
 ```
+
+Architecture rule of thumb: Qt pages render state and handle user interaction; page-level data
+access and mutations belong in service controllers under `face_and_names/services`; long-running
+Qt workers live in `face_and_names/ui/workers.py`. See `docs/architecture.md` before adding new
+page logic.
 
 Additional documentation:
 

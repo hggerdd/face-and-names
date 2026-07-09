@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from pathlib import Path
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QDate, Qt
@@ -69,7 +68,7 @@ class FilterRow(QWidget):
         name_layout = QHBoxLayout()
         name_layout.setContentsMargins(0, 0, 0, 0)
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Name...")
+        self.name_input.setPlaceholderText("Person name or alias")
         self.fuzzy_check = QCheckBox("Fuzzy")
         self.fuzzy_check.setChecked(True)
         name_layout.addWidget(self.name_input)
@@ -110,8 +109,8 @@ class FilterRow(QWidget):
         self.value_stack.addWidget(self.count_widget)
 
         # Remove Button
-        self.remove_btn = QPushButton("X")
-        self.remove_btn.setFixedWidth(30)
+        self.remove_btn = QPushButton("Remove")
+        self.remove_btn.setFixedWidth(80)
         self.remove_btn.clicked.connect(lambda: self.remove_callback(self))
         self.layout.addWidget(self.remove_btn)
 
@@ -150,7 +149,15 @@ class AdvancedSearchPage(QWidget):
         self._search_service: Optional[AdvancedSearchService] = None
 
         self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(16, 16, 16, 16)
+        self.layout.setSpacing(10)
         self.setLayout(self.layout)
+
+        heading = QLabel("<h2>Advanced Search</h2>")
+        intro = QLabel("Build precise image searches by person, date range, and face count.")
+        intro.setWordWrap(True)
+        self.layout.addWidget(heading)
+        self.layout.addWidget(intro)
 
         # Query Builder Area
         self.query_scroll = QScrollArea()
@@ -165,9 +172,9 @@ class AdvancedSearchPage(QWidget):
 
         # Controls
         controls_layout = QHBoxLayout()
-        self.add_btn = QPushButton("+ Add Criteria")
+        self.add_btn = QPushButton("Add filter")
         self.add_btn.clicked.connect(self._add_row)
-        self.search_btn = QPushButton("Search")
+        self.search_btn = QPushButton("Search images")
         self.search_btn.clicked.connect(self._perform_search)
         controls_layout.addWidget(self.add_btn)
         controls_layout.addStretch()
@@ -184,7 +191,7 @@ class AdvancedSearchPage(QWidget):
         self.results_scroll.setWidget(self.results_inner)
         self.layout.addWidget(self.results_scroll)
 
-        self.status_label = QLabel("Ready")
+        self.status_label = QLabel("Ready.")
         self.layout.addWidget(self.status_label)
 
         # Initialize with one row
@@ -277,12 +284,7 @@ class AdvancedSearchPage(QWidget):
         service = self._get_service()
         if service is None:
             return
-        try:
-            db_path = service.people_service.conn.execute("PRAGMA database_list").fetchone()[2]
-            base = Path(db_path).parent
-            img_path = base / relative_path
-        except Exception:
-            img_path = Path(relative_path)
+        img_path = service.resolve_image_path(relative_path)
         if not img_path.exists():
             QMessageBox.warning(self, "Image missing", f"File not found: {img_path}")
             return

@@ -39,7 +39,12 @@ class DiagnosticsPage(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b>Diagnostics</b>"), alignment=Qt.AlignmentFlag.AlignTop)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel("<h2>Diagnostics</h2>"), alignment=Qt.AlignmentFlag.AlignTop)
+        intro = QLabel("Check local database, registry, model artifacts, and detector setup.")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
         layout.addWidget(self.run_button)
         layout.addWidget(self.status_label)
         layout.addWidget(self.table)

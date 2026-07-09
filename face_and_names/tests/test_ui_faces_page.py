@@ -35,7 +35,6 @@ def context(conn: sqlite3.Connection, db_path: Path) -> AppContext:
     from face_and_names.services.people_service import PeopleService
     from face_and_names.services.workers import JobManager
 
-    # Mock job manager
     job_manager = JobManager(max_workers=1)
     registry_path = default_registry_path(db_path.parent)
     people_service = PeopleService(conn, registry_path=registry_path)
@@ -60,144 +59,125 @@ def faces_page(context: AppContext, qtbot) -> FacesPage:
     return page
 
 
-def _seed_images(conn: sqlite3.Connection, folder: str, count: int) -> None:
+def _seed_faces(
+    conn: sqlite3.Connection,
+    folder: str,
+    count: int,
+    *,
+    predicted_person_id: int | None = None,
+) -> list[int]:
     sessions = ImportSessionRepository(conn)
     images = ImageRepository(conn)
-    sid = sessions.create(1)
-    # Minimal valid JPEG
-    valid_jpg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00\x08\x01\x01\x00\x00\x00?\x00\xbe\x80\xff\xd9"
-
-    import hashlib
-
-    base_hash = hashlib.sha256(folder.encode()).digest()
-
-    for i in range(count):
-        # Mix folder hash with index to guarantee uniqueness across folders
-        mixed = bytearray(base_hash)
-        mixed[0] = (mixed[0] + i) % 256
-
-        images.add(
-            import_id=sid,
-            relative_path=f"{folder}/img{i}.jpg",
+    faces = FaceRepository(conn)
+    session_id = sessions.create(1)
+    face_ids: list[int] = []
+    existing_count = int(conn.execute("SELECT COUNT(*) FROM image").fetchone()[0])
+    for index in range(count):
+        unique_index = existing_count + index + 1
+        image_id = images.add(
+            import_id=session_id,
+            relative_path=f"{folder}/img{index}.jpg",
             sub_folder=folder,
-            filename=f"img{i}.jpg",
-            content_hash=bytes(mixed),
-            perceptual_hash=i,
+            filename=f"img{index}.jpg",
+            content_hash=bytes([unique_index]) * 32,
+            perceptual_hash=unique_index,
             width=100,
             height=100,
             orientation_applied=1,
-            has_faces=0,
-            thumbnail_blob=valid_jpg,
+            has_faces=1,
+            thumbnail_blob=b"thumb",
             size_bytes=100,
         )
+        face_id = faces.add(
+            image_id=image_id,
+            bbox_abs=(1.0, 2.0, 10.0, 12.0),
+            bbox_rel=(0.01, 0.02, 0.1, 0.12),
+            face_crop_blob=b"face",
+            provenance="detected",
+            person_id=None,
+            predicted_person_id=predicted_person_id,
+            prediction_confidence=0.8 if predicted_person_id is not None else None,
+        )
+        face_ids.append(face_id)
     conn.commit()
+    return face_ids
 
 
-def test_faces_page_loads_folders(faces_page: FacesPage, conn: sqlite3.Connection, qtbot) -> None:
-    _seed_images(conn, "vacation", 1)
-    _seed_images(conn, "work", 1)
+def test_faces_page_loads_folder_scope(faces_page: FacesPage, conn: sqlite3.Connection) -> None:
+    _seed_faces(conn, "vacation", 1)
+    _seed_faces(conn, "work", 1)
 
     faces_page.refresh_data()
 
     root = faces_page.tree.topLevelItem(0)
-    assert root.text(0) == "/"
-
-    # Check children
+    assert root.text(0) == "All folders"
     children = [root.child(i).text(0) for i in range(root.childCount())]
     assert "vacation" in children
     assert "work" in children
 
 
-def test_faces_page_selecting_folder_loads_images(
-    faces_page: FacesPage, conn: sqlite3.Connection, qtbot
+def test_faces_page_loads_face_grid_for_selected_scope(
+    faces_page: FacesPage, conn: sqlite3.Connection
 ) -> None:
-    _seed_images(conn, "vacation", 5)
-    faces_page.refresh_data()
-
-    # Find and select 'vacation'
-    root = faces_page.tree.topLevelItem(0)
-    vacation_item = None
-    for i in range(root.childCount()):
-        if root.child(i).text(0) == "vacation":
-            vacation_item = root.child(i)
-            break
-
-    assert vacation_item is not None
-    faces_page.tree.setCurrentItem(vacation_item)
-
-    # Wait for signals if async, but here it's sync
-    assert faces_page.image_list.count() == 5
-    assert faces_page.status.text().startswith("5/5 images")
-
-
-def test_faces_page_paging(faces_page: FacesPage, conn: sqlite3.Connection, qtbot) -> None:
-    faces_page.page_size = 2
-    _seed_images(conn, "huge", 5)
-    faces_page.refresh_data()
-
-    # Select folder
-    root = faces_page.tree.topLevelItem(0)
-    faces_page.tree.setCurrentItem(root.child(0))
-
-    assert faces_page.image_list.count() == 2
-    assert faces_page.load_more_btn.isEnabled()
-
-    # Click load more
-    qtbot.mouseClick(faces_page.load_more_btn, Qt.MouseButton.LeftButton)
-
-    assert faces_page.image_list.count() == 4
-    assert faces_page.load_more_btn.isEnabled()
-
-    # Click load more again (last item)
-    qtbot.mouseClick(faces_page.load_more_btn, Qt.MouseButton.LeftButton)
-
-    assert faces_page.image_list.count() == 5
-    assert not faces_page.load_more_btn.isEnabled()
-
-
-def test_faces_page_selecting_image_shows_preview(
-    faces_page: FacesPage, conn: sqlite3.Connection, qtbot
-) -> None:
-    _seed_images(conn, "pics", 1)
-    faces_page.refresh_data()
-
-    # Select folder
-    root = faces_page.tree.topLevelItem(0)
-    faces_page.tree.setCurrentItem(root.child(0))
-
-    # Select image
-    faces_page.image_list.setCurrentRow(0)
-
-    # Check preview scene has items
-    assert len(faces_page.preview.scene().items()) > 0
-    assert "0 faces" in faces_page.status.text()
-
-
-def test_faces_page_mode_filter_limits_image_list(
-    faces_page: FacesPage, conn: sqlite3.Connection, qtbot
-) -> None:
-    _seed_images(conn, "pics", 2)
-    image_id = conn.execute(
-        "SELECT id FROM image WHERE sub_folder = ? AND filename = ?",
-        ("pics", "img0.jpg"),
-    ).fetchone()[0]
-    FaceRepository(conn).add(
-        image_id=image_id,
-        bbox_abs=(1.0, 2.0, 10.0, 12.0),
-        bbox_rel=(0.01, 0.02, 0.1, 0.12),
-        face_crop_blob=b"face",
-        provenance="detected",
-        person_id=None,
-    )
-    conn.commit()
+    _seed_faces(conn, "vacation", 3)
     faces_page.refresh_data()
 
     root = faces_page.tree.topLevelItem(0)
     faces_page.tree.setCurrentItem(root.child(0))
-    assert faces_page.image_list.count() == 2
 
-    faces_page.mode_combo.setCurrentIndex(1)
+    assert len(faces_page.current_tiles) == 3
+    assert faces_page.total_faces == 3
+    assert faces_page.selection_label.text() == "3 selected"
 
-    assert faces_page.mode_combo.currentData() == "unnamed"
-    assert faces_page.image_list.count() == 1
-    assert faces_page.image_list.item(0).text() == "img0.jpg"
+
+def test_faces_page_face_grid_paging(
+    faces_page: FacesPage, conn: sqlite3.Connection, qtbot
+) -> None:
+    faces_page.PAGE_SIZE = 2
+    _seed_faces(conn, "huge", 5)
+    faces_page.refresh_data()
+
+    root = faces_page.tree.topLevelItem(0)
+    faces_page.tree.setCurrentItem(root.child(0))
+
+    assert len(faces_page.current_tiles) == 2
+    assert faces_page.next_btn.isEnabled()
+
+    qtbot.mouseClick(faces_page.next_btn, Qt.MouseButton.LeftButton)
+
+    assert len(faces_page.current_tiles) == 2
+    assert faces_page.page_label.text() == "Page 2/3"
+
+
+def test_faces_page_mode_filter_limits_face_grid(
+    faces_page: FacesPage, conn: sqlite3.Connection, context: AppContext
+) -> None:
+    person_id = context.people_service.create_person("Ada", "Lovelace")
+    _seed_faces(conn, "pics", 1)
+    _seed_faces(conn, "pics", 1, predicted_person_id=person_id)
+    faces_page.refresh_data()
+
+    root = faces_page.tree.topLevelItem(0)
+    faces_page.tree.setCurrentItem(root.child(0))
+    assert faces_page.total_faces == 2
+
+    faces_page.mode_combo.setCurrentIndex(2)
+
+    assert faces_page.mode_combo.currentData() == "predicted"
+    assert faces_page.total_faces == 1
+    assert len(faces_page.current_tiles) == 1
+
+
+def test_faces_page_accepts_selected_predictions(
+    faces_page: FacesPage,
+    conn: sqlite3.Connection,
+    context: AppContext,
+) -> None:
+    person_id = context.people_service.create_person("Ada", "Lovelace")
+    face_ids = _seed_faces(conn, "pics", 1, predicted_person_id=person_id)
+    faces_page.refresh_data()
+
+    faces_page._accept_selected_predictions()
+
+    row = conn.execute("SELECT person_id FROM face WHERE id = ?", (face_ids[0],)).fetchone()
+    assert row == (person_id,)

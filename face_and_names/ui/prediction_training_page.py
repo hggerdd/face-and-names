@@ -6,10 +6,9 @@ Allows starting, monitoring, and cancelling training using the headless pipeline
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -25,78 +24,8 @@ from PyQt6.QtWidgets import (
 )
 
 from face_and_names.app_context import AppContext
-from face_and_names.models.db import connect
 from face_and_names.services.people_service import PeopleService
-from face_and_names.services.prediction_apply import apply_predictions
-from face_and_names.services.prediction_service import PredictionService
-from face_and_names.training.trainer import TrainingConfig, train_model_from_db
-
-
-class TrainingWorker(QThread):
-    progress = pyqtSignal(str, int)
-    finished = pyqtSignal(dict)
-    failed = pyqtSignal(str)
-
-    def __init__(self, context: AppContext, model_dir: Path):
-        super().__init__()
-        self.context = context
-        self.model_dir = model_dir
-        self._stop = threading.Event()
-
-    def stop(self) -> None:
-        self._stop.set()
-
-    def run(self) -> None:
-        try:
-            cfg = TrainingConfig(model_dir=self.model_dir)
-
-            def report(stage: str, current: int, total: int) -> None:
-                pct = 0 if total == 0 else int((current / max(total, 1)) * 100)
-                self.progress.emit(stage, pct)
-
-            metrics = train_model_from_db(
-                self.context.db_path,
-                config=cfg,
-                progress=report,
-                should_stop=lambda: self._stop.is_set(),
-            )
-            self.finished.emit(metrics)
-        except Exception as exc:  # pragma: no cover - UI safety
-            self.failed.emit(str(exc))
-
-
-class PredictionApplyWorker(QThread):
-    progress = pyqtSignal(str, int)
-    finished = pyqtSignal(int)
-    failed = pyqtSignal(str)
-
-    def __init__(self, context: AppContext, service: PredictionService, unnamed_only: bool = False):
-        super().__init__()
-        self.context = context
-        self.service = service
-        self.unnamed_only = unnamed_only
-        self._stop = threading.Event()
-
-    def stop(self) -> None:
-        self._stop.set()
-
-    def run(self) -> None:
-        try:
-            conn = connect(self.context.db_path)
-            try:
-                count = apply_predictions(
-                    conn,
-                    self.service,
-                    unnamed_only=self.unnamed_only,
-                    assign_person=False,
-                    progress=lambda label, pct: self.progress.emit(label, pct),
-                    should_stop=lambda: self._stop.is_set(),
-                )
-                self.finished.emit(count)
-            finally:
-                conn.close()
-        except Exception as exc:  # pragma: no cover - UI safety
-            self.failed.emit(str(exc))
+from face_and_names.ui.workers import PredictionApplyWorker, TrainingWorker
 
 
 class PredictionTrainingPage(QWidget):
@@ -106,18 +35,18 @@ class PredictionTrainingPage(QWidget):
         self.worker: TrainingWorker | None = None
         self.predict_worker: PredictionApplyWorker | None = None
 
-        self.status_label = QLabel("Idle")
+        self.status_label = QLabel("Training idle.")
         self.summary_label = QLabel("Verified faces: unknown")
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
-        self.start_btn = QPushButton("Start training")
-        self.cancel_btn = QPushButton("Cancel")
+        self.start_btn = QPushButton("Train prediction model")
+        self.cancel_btn = QPushButton("Stop training")
         self.cancel_btn.setEnabled(False)
-        self.apply_btn = QPushButton("Apply model")
-        self.apply_cancel_btn = QPushButton("Cancel apply")
+        self.apply_btn = QPushButton("Run predictions")
+        self.apply_cancel_btn = QPushButton("Stop predictions")
         self.apply_cancel_btn.setEnabled(False)
-        self.unnamed_only = QCheckBox("Only unnamed faces")
-        self.apply_status = QLabel("Prediction idle")
+        self.unnamed_only = QCheckBox("Only faces without assigned person")
+        self.apply_status = QLabel("Prediction idle.")
         self.apply_progress = QProgressBar()
         self.apply_progress.setRange(0, 100)
         self.cm_label = QLabel("Confusion matrix (eligible IDs >50 imgs):")
@@ -128,9 +57,16 @@ class PredictionTrainingPage(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
         layout.addWidget(
-            QLabel("<b>Prediction model training</b>"), alignment=Qt.AlignmentFlag.AlignTop
+            QLabel("<h2>Prediction Model Training</h2>"), alignment=Qt.AlignmentFlag.AlignTop
         )
+        intro = QLabel(
+            "Train model artifacts from verified named faces, then write predictions back for review in Faces."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
         layout.addWidget(self.summary_label)
         layout.addWidget(self.status_label)
         layout.addWidget(self.progress_bar)
@@ -141,7 +77,9 @@ class PredictionTrainingPage(QWidget):
         row.addStretch(1)
         layout.addLayout(row)
 
-        layout.addWidget(QLabel("<b>Apply model to faces</b>"), alignment=Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(
+            QLabel("<b>Run predictions on faces</b>"), alignment=Qt.AlignmentFlag.AlignTop
+        )
         apply_row = QHBoxLayout()
         apply_row.addWidget(self.apply_btn)
         apply_row.addWidget(self.apply_cancel_btn)
@@ -171,7 +109,7 @@ class PredictionTrainingPage(QWidget):
         self.worker.finished.connect(self._on_finished)
         self.worker.failed.connect(self._on_failed)
         self.progress_bar.setValue(0)
-        self.status_label.setText("Starting...")
+        self.status_label.setText("Starting training...")
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.worker.start()
@@ -179,7 +117,7 @@ class PredictionTrainingPage(QWidget):
     def _cancel_training(self) -> None:
         if self.worker and self.worker.isRunning():
             self.worker.stop()
-            self.status_label.setText("Cancelling...")
+            self.status_label.setText("Stopping training...")
             self.cancel_btn.setEnabled(False)
 
     def _on_progress(self, stage: str, percent: int) -> None:
@@ -221,7 +159,7 @@ class PredictionTrainingPage(QWidget):
         self.predict_worker.finished.connect(self._on_apply_finished)
         self.predict_worker.failed.connect(self._on_apply_failed)
         self.apply_progress.setValue(0)
-        self.apply_status.setText("Starting apply...")
+        self.apply_status.setText("Starting predictions...")
         self.apply_btn.setEnabled(False)
         self.apply_cancel_btn.setEnabled(True)
         self.predict_worker.start()
@@ -229,7 +167,7 @@ class PredictionTrainingPage(QWidget):
     def _cancel_apply(self) -> None:
         if self.predict_worker and self.predict_worker.isRunning():
             self.predict_worker.stop()
-            self.apply_status.setText("Cancelling...")
+            self.apply_status.setText("Stopping predictions...")
             self.apply_cancel_btn.setEnabled(False)
 
     def _on_apply_progress(self, label: str, pct: int) -> None:
@@ -237,7 +175,7 @@ class PredictionTrainingPage(QWidget):
         self.apply_progress.setValue(pct)
 
     def _on_apply_finished(self, count: int) -> None:
-        self.apply_status.setText(f"Applied to {count} faces")
+        self.apply_status.setText(f"Predictions written for {count} faces")
         self.apply_progress.setValue(100)
         self.apply_btn.setEnabled(True)
         self.apply_cancel_btn.setEnabled(False)

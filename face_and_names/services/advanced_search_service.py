@@ -4,6 +4,7 @@ import difflib
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, List
 
 from face_and_names.services.people_service import PeopleService
@@ -55,6 +56,8 @@ class AdvancedSearchService:
     def __init__(self, people_service: PeopleService):
         self.people_service = people_service
         self.conn = people_service.conn
+        db_path = self.conn.execute("PRAGMA database_list").fetchone()[2]
+        self.db_root = Path(db_path).parent
         self._register_functions()
 
     def _register_functions(self):
@@ -173,3 +176,7 @@ class AdvancedSearchService:
             )
 
         return results
+
+    def resolve_image_path(self, relative_path: str) -> Path:
+        """Resolve an image path relative to the active DB root."""
+        return self.db_root / relative_path

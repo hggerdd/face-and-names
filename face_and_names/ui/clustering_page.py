@@ -5,10 +5,9 @@ Clustering page: select scope, run clustering, and browse clusters.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Sequence
+from typing import List
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -28,15 +27,11 @@ from PyQt6.QtWidgets import (
 )
 
 from face_and_names.app_context import AppContext
-from face_and_names.models.db import connect
-from face_and_names.models.repositories import FaceRepository
-from face_and_names.services.clustering_service import (
-    ClusteringOptions,
-    ClusteringService,
-    ClusterResult,
-)
+from face_and_names.services.clustering_page_controller import ClusteringPageController
+from face_and_names.services.clustering_service import ClusterResult
 from face_and_names.ui.components.face_tile import FaceTile, FaceTileData, PersonSelectDialog
 from face_and_names.ui.faces_page import FaceImageView
+from face_and_names.ui.workers import ClusteringWorker
 
 
 def _person_sort_key(person: dict) -> str:
@@ -61,53 +56,6 @@ class ClusterState:
         return self.clusters[self.index]
 
 
-class ClusteringWorker(QObject):
-    finished = pyqtSignal(object, object)  # result, error
-
-    def __init__(
-        self,
-        db_path: Path,
-        folders: Sequence[str],
-        last_import_only: bool,
-        exclude_named: bool,
-        algorithm: str,
-        eps: float,
-        min_samples: int,
-        k_clusters: int,
-        feature_source: str,
-    ) -> None:
-        super().__init__()
-        self.db_path = db_path
-        self.folders = folders
-        self.last_import_only = last_import_only
-        self.exclude_named = exclude_named
-        self.algorithm = algorithm
-        self.eps = eps
-        self.min_samples = min_samples
-        self.k_clusters = k_clusters
-        self.feature_source = feature_source
-
-    def run(self) -> None:
-        try:
-            conn = connect(self.db_path)
-            service = ClusteringService(conn)
-            options = ClusteringOptions(
-                last_import_only=self.last_import_only,
-                exclude_named=self.exclude_named,
-                folders=self.folders,
-                eps=self.eps,
-                min_samples=self.min_samples,
-                k_clusters=self.k_clusters,
-                algorithm=self.algorithm,
-                feature_source=self.feature_source,
-            )
-            result = service.cluster_faces(options)
-            conn.close()
-            self.finished.emit(result, None)
-        except Exception as exc:  # pragma: no cover
-            self.finished.emit([], exc)
-
-
 class ClusteringPage(QWidget):
     """UI for clustering faces and browsing cluster results."""
 
@@ -115,7 +63,7 @@ class ClusteringPage(QWidget):
         super().__init__()
         self.context = context
         self.people_service = context.people_service
-        self.face_repo = FaceRepository(context.conn)
+        self.controller = ClusteringPageController(context.conn, context.db_path.parent)
         self.folder_list = QListWidget()
         self.folder_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.last_import_checkbox = QCheckBox("Only last import session")
@@ -135,7 +83,7 @@ class ClusteringPage(QWidget):
         self.kmeans_clusters_spin.setSingleStep(1)
         self.kmeans_clusters_spin.setValue(50)
         self.kmeans_clusters_spin.setEnabled(False)
-        self.status_label = QLabel("Select folders and run clustering.")
+        self.status_label = QLabel("Advanced clustering. The main review workflow is in Faces.")
         self.run_btn = QPushButton("Run clustering")
         self.set_name_btn = QPushButton("Set name")
         self.set_name_btn.setVisible(False)  # keep code path but hide per latest UX
@@ -178,8 +126,17 @@ class ClusteringPage(QWidget):
             pass
 
     def _build_ui(self) -> None:
+        header = QVBoxLayout()
+        heading = QLabel("<h2>Advanced Clustering</h2>")
+        intro = QLabel(
+            "Run clustering jobs and inspect clusters here. Use Faces for the primary review and naming workflow."
+        )
+        intro.setWordWrap(True)
+        header.addWidget(heading)
+        header.addWidget(intro)
+
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("Folders (multi-select):"))
+        controls.addWidget(QLabel("Scope folders:"))
         controls.addStretch(1)
         controls.addWidget(self.last_import_checkbox)
         controls.addWidget(self.exclude_named_checkbox)
@@ -187,13 +144,13 @@ class ClusteringPage(QWidget):
         algo_row = QHBoxLayout()
         algo_row.addWidget(QLabel("Algorithm:"))
         algo_row.addWidget(self.algorithm_combo)
-        algo_row.addWidget(QLabel("eps:"))
+        algo_row.addWidget(QLabel("DBSCAN eps:"))
         algo_row.addWidget(self.eps_spin)
-        algo_row.addWidget(QLabel("min_samples:"))
+        algo_row.addWidget(QLabel("Min samples:"))
         algo_row.addWidget(self.min_samples_spin)
-        algo_row.addWidget(QLabel("k (kmeans):"))
+        algo_row.addWidget(QLabel("KMeans clusters:"))
         algo_row.addWidget(self.kmeans_clusters_spin)
-        algo_row.addWidget(QLabel("Feature:"))
+        algo_row.addWidget(QLabel("Feature source:"))
         algo_row.addWidget(self.feature_source_combo)
         algo_row.addStretch(1)
 
@@ -205,6 +162,7 @@ class ClusteringPage(QWidget):
         buttons.addWidget(self.next_btn)
 
         layout = QVBoxLayout()
+        layout.addLayout(header)
         layout.addLayout(controls)
         layout.addLayout(algo_row)
         layout.addWidget(self.folder_list)
@@ -227,10 +185,7 @@ class ClusteringPage(QWidget):
 
     def _load_folders(self) -> None:
         self.folder_list.clear()
-        rows = self.context.conn.execute(
-            "SELECT DISTINCT sub_folder FROM image WHERE sub_folder != '' ORDER BY sub_folder"
-        ).fetchall()
-        for (folder,) in rows:
+        for folder in self.controller.list_folders():
             item = QListWidgetItem(folder)
             self.folder_list.addItem(item)
 
@@ -345,9 +300,9 @@ class ClusteringPage(QWidget):
         people = {p["id"]: p for p in self.people_service.list_people()}
         max_cols = 4
         for idx, face in enumerate(cluster.faces):
-            info = self._face_record(face.face_id)
-            person_id = info["person_id"] if info else None
-            predicted_person_id = info["predicted_person_id"] if info else None
+            info = self.controller.face_record(face.face_id)
+            person_id = info.person_id if info else None
+            predicted_person_id = info.predicted_person_id if info else None
             person_name = self._display_for(person_id, people)
             predicted_name = face.predicted_name or self._display_for(predicted_person_id, people)
             tile = FaceTile(
@@ -378,15 +333,6 @@ class ClusteringPage(QWidget):
             self.faces_layout.addWidget(tile, row, col, alignment=Qt.AlignmentFlag.AlignTop)
             self.current_tiles.append(tile)
 
-    def _face_record(self, face_id: int) -> dict:
-        row = self.context.conn.execute(
-            "SELECT person_id, predicted_person_id FROM face WHERE id = ?",
-            (face_id,),
-        ).fetchone()
-        if row is None:
-            return {}
-        return {"person_id": row[0], "predicted_person_id": row[1]}
-
     def _display_for(self, person_id: int | None, people: dict) -> str | None:
         if person_id is None:
             return None
@@ -396,8 +342,7 @@ class ClusteringPage(QWidget):
         return person.get("display_name") or person.get("primary_name")
 
     def _delete_face(self, face_id: int) -> None:
-        self.face_repo.delete(face_id)
-        self.context.conn.commit()
+        self.controller.delete_face(face_id)
 
     def _on_tile_deleted(self, face_id: int) -> None:
         # Remove deleted face from in-memory cluster state and refresh view
@@ -415,25 +360,22 @@ class ClusteringPage(QWidget):
             self.state.index = max(0, len(self.state.clusters) - 1)
 
     def _assign_person(self, face_id: int, person_id: int | None) -> None:
-        self.face_repo.update_person(face_id, person_id)
-        self.context.conn.commit()
+        self.controller.assign_person(face_id, person_id)
         # refresh current cluster tiles/view
         self._show_cluster()
 
     def _open_original_image(self, face_id: int) -> None:
-        row = self.face_repo.get_face_with_image(face_id)
-        if row is None:
+        original = self.controller.get_original_face_image(face_id)
+        if original is None:
             return
-        _, image_id, x, y, w, h, rel_path, img_w, img_h = row
-        img_path = self.context.db_path.parent / rel_path
-        if not img_path.exists():
-            QMessageBox.warning(self, "Image missing", f"File not found: {img_path}")
+        if not original.image_path.exists():
+            QMessageBox.warning(self, "Image missing", f"File not found: {original.image_path}")
             return
-        pix = QPixmap(str(img_path))
+        pix = QPixmap(str(original.image_path))
         window = QDialog(self)
         window.setWindowTitle("Original image")
         view = FaceImageView()
-        view.show_image(pix, [(float(x), float(y), float(w), float(h))])
+        view.show_image(pix, [original.bbox_rel])
         layout = QVBoxLayout()
         layout.addWidget(view)
         window.setLayout(layout)
@@ -468,9 +410,7 @@ class ClusteringPage(QWidget):
             return
         pid = dlg.selected_person_id
         try:
-            for tile in tiles:
-                self.face_repo.update_person(tile.data.face_id, pid)
-            self.context.conn.commit()
+            self.controller.assign_person_to_faces([tile.data.face_id for tile in tiles], pid)
             self._show_cluster()
         except Exception as exc:  # pragma: no cover - UI guardrail
             QMessageBox.critical(self, "Assign failed", str(exc))
@@ -495,9 +435,7 @@ class ClusteringPage(QWidget):
                     self, "No selection", "Select one or more faces to set a name."
                 )
                 return
-            for tile in tiles:
-                self.face_repo.update_person(tile.data.face_id, int(pid))
-            self.context.conn.commit()
+            self.controller.assign_person_to_faces([tile.data.face_id for tile in tiles], int(pid))
             self._show_cluster()
         except Exception as exc:  # pragma: no cover - safety
             QMessageBox.critical(self, "Assign failed", str(exc))

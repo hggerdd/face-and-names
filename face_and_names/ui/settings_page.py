@@ -8,13 +8,14 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QCheckBox, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from face_and_names.app_context import AppContext
-from face_and_names.services.data_reset import reset_image_data
+from face_and_names.services.settings_controller import SettingsController
 
 
 class SettingsPage(QWidget):
     def __init__(self, context: AppContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.context = context
+        self.controller = SettingsController(context.conn)
         self.reset_btn = QPushButton("Reset database (images/faces only)")
         self.status = QLabel("")
         self.confirm_delete_checkbox = QCheckBox("Confirm face delete actions")
@@ -29,12 +30,19 @@ class SettingsPage(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b>Settings</b>"), alignment=Qt.AlignmentFlag.AlignTop)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel("<h2>Settings</h2>"), alignment=Qt.AlignmentFlag.AlignTop)
+        intro = QLabel("Configure local behavior and maintenance actions for the active DB Root.")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        layout.addWidget(QLabel("<b>Safety</b>"))
+        layout.addWidget(self.confirm_delete_checkbox)
+        layout.addWidget(QLabel("<b>Database maintenance</b>"))
         layout.addWidget(
             QLabel("Reset will delete images, faces, metadata, sessions, stats, audit logs.")
         )
         layout.addWidget(QLabel("People, aliases, and groups are preserved."))
-        layout.addWidget(self.confirm_delete_checkbox)
         layout.addWidget(self.reset_btn)
         layout.addWidget(self.status)
         layout.addStretch(1)
@@ -52,7 +60,7 @@ class SettingsPage(QWidget):
         if ret != QMessageBox.StandardButton.Yes:
             return
         try:
-            reset_image_data(self.context.conn)
+            self.controller.reset_imported_data()
             self.status.setText("Database reset complete.")
         except Exception as exc:  # pragma: no cover - UI safety
             QMessageBox.critical(self, "Reset failed", str(exc))
