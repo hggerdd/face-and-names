@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from face_and_names.constants import UNKNOWN_SHORT_NAME
 from face_and_names.models.db import initialize_database
 from face_and_names.services.people_service import PeopleService
@@ -129,3 +131,29 @@ def test_rename_person_updates_name(tmp_path: Path) -> None:
     ).fetchone()
     assert row[0] == "NN"
     assert row[1] == "NN"
+
+
+def test_person_mutation_restores_registry_when_database_write_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    conn = initialize_database(tmp_path / "faces.db")
+    registry_path = default_registry_path(tmp_path)
+    service = PeopleService(conn, registry_path=registry_path)
+    before = registry_path.read_bytes()
+
+    monkeypatch.setattr(
+        service,
+        "_rewrite_person_tables",
+        lambda: (_ for _ in ()).throw(RuntimeError("simulated database failure")),
+    )
+
+    with pytest.raises(RuntimeError, match="simulated database failure"):
+        service.create_person("Rollback", "Person")
+
+    assert registry_path.read_bytes() == before
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM person WHERE primary_name = 'Rollback Person'"
+        ).fetchone()[0]
+        == 0
+    )

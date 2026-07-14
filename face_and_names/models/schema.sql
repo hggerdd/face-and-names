@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS import_session (
     id INTEGER PRIMARY KEY,
     import_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     folder_count INTEGER NOT NULL,
-    image_count INTEGER NOT NULL DEFAULT 0
+    image_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'completed',
+    next_index INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS image (
@@ -79,6 +81,10 @@ CREATE TABLE IF NOT EXISTS face_embedding (
     vector_dim INTEGER NOT NULL,
     vector_dtype TEXT NOT NULL DEFAULT 'float32',
     vector_blob BLOB NOT NULL,
+    preprocessing_version TEXT NOT NULL DEFAULT 'unknown',
+    input_normalization TEXT NOT NULL DEFAULT 'unknown',
+    similarity_metric TEXT NOT NULL DEFAULT 'unknown',
+    crop_strategy TEXT NOT NULL DEFAULT 'unknown',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (face_id, model_name, model_version, crop_sha256)
 );

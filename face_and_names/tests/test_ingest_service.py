@@ -195,6 +195,30 @@ def test_ingest_supports_cancellation_and_resume(tmp_path: Path) -> None:
     # Remaining images should be skipped as duplicates or processed, but DB should have all 3
     count = conn.execute("SELECT COUNT(*) FROM image").fetchone()[0]
     assert count == 3
+    session = conn.execute(
+        "SELECT status, next_index FROM import_session WHERE id = ?", (progress1.session_id,)
+    ).fetchone()
+    assert session == ("completed", 3)
+
+
+def test_ingest_rolls_back_partial_image_on_failure(monkeypatch, tmp_path: Path) -> None:
+    db_root = tmp_path / "dbroot"
+    photos = db_root / "photos"
+    image_path = photos / "a.jpg"
+    _make_image(image_path, (10, 10))
+    conn = initialize_database(db_root / "faces.db")
+    ingest = IngestService(db_root=db_root, conn=conn)
+    original = ingest._ingest_one
+
+    def fail_after_write(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("simulated face persistence failure")
+
+    monkeypatch.setattr(ingest, "_ingest_one", fail_after_write)
+    progress = ingest.start_session([photos], options=IngestOptions(recursive=False))
+
+    assert progress.errors
+    assert conn.execute("SELECT COUNT(*) FROM image").fetchone()[0] == 0
 
 
 def test_face_crop_expands_by_configured_pct(monkeypatch, tmp_path: Path) -> None:

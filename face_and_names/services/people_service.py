@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from face_and_names.constants import UNKNOWN_SHORT_NAME
 from face_and_names.models.repositories import (
@@ -24,26 +24,38 @@ class PeopleService:
     def __init__(self, conn: sqlite3.Connection, registry_path: Path | None = None) -> None:
         self.conn = conn
         self.registry_path = registry_path or default_registry_path()
-        self._ensure_person_schema()
         self.registry = PersonRegistry(self.registry_path)
         self.people = PersonRepository(conn)
         self.aliases = PersonAliasRepository(conn)
         self.groups = GroupRepository(conn)
         self.person_groups = PersonGroupRepository(conn)
         self._synchronize_registry_and_db()
+        self.conn.commit()
         self.unknown_person_id = self.ensure_unknown_person()
+        self.conn.commit()
 
-    def _ensure_person_schema(self) -> None:
-        """Add missing person columns for legacy databases."""
-        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(person)")}
-        if "first_name" not in cols:
-            self.conn.execute("ALTER TABLE person ADD COLUMN first_name TEXT NOT NULL DEFAULT ''")
-        if "last_name" not in cols:
-            self.conn.execute("ALTER TABLE person ADD COLUMN last_name TEXT NOT NULL DEFAULT ''")
-        if "short_name" not in cols:
-            self.conn.execute("ALTER TABLE person ADD COLUMN short_name TEXT")
-        if {"first_name", "last_name", "short_name", "primary_name"}.issubset(cols) is False:
+    def _run_registry_db_mutation(
+        self,
+        registry_mutation: Callable[[], object],
+        db_mutation: Callable[[], object],
+    ) -> object:
+        """Coordinate an SQLite mutation with recoverable registry state."""
+        snapshot = self.registry.snapshot()
+        try:
+            self.conn.execute("BEGIN")
+            result = registry_mutation()
+            db_mutation()
             self.conn.commit()
+            return result
+        except Exception:
+            self.conn.rollback()
+            try:
+                self.registry.restore(snapshot)
+            except Exception as restore_error:
+                raise RuntimeError(
+                    "Registry rollback failed; recover from the registry backup"
+                ) from restore_error
+            raise
 
     @staticmethod
     def display_name(
@@ -67,39 +79,49 @@ class PeopleService:
         birthdate: str | None = None,
         notes: str | None = None,
     ) -> int:
-        pid = self.registry.add_person(
-            first_name=first_name,
-            last_name=last_name,
-            short_name=short_name,
-            birthdate=birthdate,
-            notes=notes,
-            aliases=[{"name": alias, "kind": "alias"} for alias in aliases or []],
+        return int(
+            self._run_registry_db_mutation(
+                lambda: self.registry.add_person(
+                    first_name=first_name,
+                    last_name=last_name,
+                    short_name=short_name,
+                    birthdate=birthdate,
+                    notes=notes,
+                    aliases=[{"name": alias, "kind": "alias"} for alias in aliases or []],
+                ),
+                self._rewrite_person_tables,
+            )
         )
-        self._rewrite_person_tables()
-        return pid
 
     def merge_people(self, source_ids: list[int], target_id: int) -> None:
         to_merge = [pid for pid in source_ids if pid != target_id]
         if not to_merge:
             return
-        self.registry.merge_people(source_ids, target_id)
         mapping = {pid: target_id for pid in to_merge}
-        self._remap_person_ids(mapping)
-        self._rewrite_person_tables()
-        self.conn.commit()
+        self._run_registry_db_mutation(
+            lambda: self.registry.merge_people(source_ids, target_id),
+            lambda: (self._remap_person_ids(mapping), self._rewrite_person_tables()),
+        )
 
     def add_alias(self, person_id: int, name: str, kind: str = "alias") -> int:
-        self.registry.add_alias(person_id, name, kind=kind)
-        try:
-            alias_id = self.aliases.add_alias(person_id, name, kind=kind)
-        except sqlite3.IntegrityError:
-            alias_id = int(
-                self.conn.execute(
-                    "SELECT id FROM person_alias WHERE person_id = ? AND name = ? AND kind = ?",
-                    (person_id, name, kind),
-                ).fetchone()[0]
-            )
-        self.conn.commit()
+        alias_id = 0
+
+        def add_registry_alias() -> None:
+            self.registry.add_alias(person_id, name, kind=kind)
+
+        def add_db_alias() -> None:
+            nonlocal alias_id
+            try:
+                alias_id = self.aliases.add_alias(person_id, name, kind=kind)
+            except sqlite3.IntegrityError:
+                alias_id = int(
+                    self.conn.execute(
+                        "SELECT id FROM person_alias WHERE person_id = ? AND name = ? AND kind = ?",
+                        (person_id, name, kind),
+                    ).fetchone()[0]
+                )
+
+        self._run_registry_db_mutation(add_registry_alias, add_db_alias)
         return alias_id
 
     def list_people(self) -> list[dict]:
@@ -154,11 +176,12 @@ class PeopleService:
     def rename_person(
         self, person_id: int, first_name: str, last_name: str, short_name: str | None = None
     ) -> None:
-        self.registry.rename_person(
-            person_id, first_name=first_name, last_name=last_name, short_name=short_name
+        self._run_registry_db_mutation(
+            lambda: self.registry.rename_person(
+                person_id, first_name=first_name, last_name=last_name, short_name=short_name
+            ),
+            self._rewrite_person_tables,
         )
-        self._rewrite_person_tables()
-        self.conn.commit()
 
     def ensure_unknown_person(self) -> int:
         """
@@ -172,9 +195,13 @@ class PeopleService:
                 self._rewrite_person_tables()
                 return record.id
 
-        pid = self.registry.add_person(first_name="", last_name="", short_name=UNKNOWN_SHORT_NAME)
-        self._rewrite_person_tables()
-        return pid
+        pid = self._run_registry_db_mutation(
+            lambda: self.registry.add_person(
+                first_name="", last_name="", short_name=UNKNOWN_SHORT_NAME
+            ),
+            self._rewrite_person_tables,
+        )
+        return int(pid)
 
     # Synchronization helpers --------------------------------------------
     def _synchronize_registry_and_db(self) -> None:
@@ -328,7 +355,6 @@ class PeopleService:
             except sqlite3.OperationalError:
                 # sqlite_sequence may not exist depending on table creation flags
                 pass
-        self.conn.commit()
 
     def _remap_person_ids(self, mapping: dict[int, int]) -> None:
         """Update foreign keys when we must reassign person IDs."""

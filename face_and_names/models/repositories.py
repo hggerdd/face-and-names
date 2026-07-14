@@ -31,6 +31,15 @@ class ImportSessionRepository:
             (delta, session_id),
         )
 
+    def update_progress(self, session_id: int, next_index: int) -> None:
+        self.conn.execute(
+            "UPDATE import_session SET next_index = ?, status = 'running' WHERE id = ?",
+            (next_index, session_id),
+        )
+
+    def finish(self, session_id: int, status: str) -> None:
+        self.conn.execute("UPDATE import_session SET status = ? WHERE id = ?", (status, session_id))
+
     def get(self, session_id: int) -> tuple[int, int, int]:
         cursor = self.conn.execute(
             "SELECT id, folder_count, image_count FROM import_session WHERE id = ?",
@@ -209,6 +218,10 @@ class FaceEmbeddingRecord:
     vector_dim: int
     vector_dtype: str
     vector_blob: bytes
+    preprocessing_version: str = "unknown"
+    input_normalization: str = "unknown"
+    similarity_metric: str = "unknown"
+    crop_strategy: str = "unknown"
 
 
 class FaceEmbeddingRepository:
@@ -224,6 +237,10 @@ class FaceEmbeddingRepository:
         model_name: str,
         model_version: str,
         crop_sha256: str,
+        preprocessing_version: str = "unknown",
+        input_normalization: str = "unknown",
+        similarity_metric: str = "unknown",
+        crop_strategy: str = "unknown",
     ) -> FaceEmbeddingRecord | None:
         row = self.conn.execute(
             """
@@ -234,8 +251,21 @@ class FaceEmbeddingRepository:
               AND model_name = ?
               AND model_version = ?
               AND crop_sha256 = ?
+              AND preprocessing_version = ?
+              AND input_normalization = ?
+              AND similarity_metric = ?
+              AND crop_strategy = ?
             """,
-            (face_id, model_name, model_version, crop_sha256),
+            (
+                face_id,
+                model_name,
+                model_version,
+                crop_sha256,
+                preprocessing_version,
+                input_normalization,
+                similarity_metric,
+                crop_strategy,
+            ),
         ).fetchone()
         if row is None:
             return None
@@ -259,18 +289,27 @@ class FaceEmbeddingRepository:
         vector_dim: int,
         vector_dtype: str,
         vector_blob: bytes,
+        preprocessing_version: str = "unknown",
+        input_normalization: str = "unknown",
+        similarity_metric: str = "unknown",
+        crop_strategy: str = "unknown",
     ) -> None:
         self.conn.execute(
             """
             INSERT INTO face_embedding (
                 face_id, model_name, model_version, crop_sha256,
-                vector_dim, vector_dtype, vector_blob
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                vector_dim, vector_dtype, vector_blob,
+                preprocessing_version, input_normalization, similarity_metric, crop_strategy
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(face_id, model_name, model_version, crop_sha256)
             DO UPDATE SET
                 vector_dim = excluded.vector_dim,
                 vector_dtype = excluded.vector_dtype,
                 vector_blob = excluded.vector_blob,
+                preprocessing_version = excluded.preprocessing_version,
+                input_normalization = excluded.input_normalization,
+                similarity_metric = excluded.similarity_metric,
+                crop_strategy = excluded.crop_strategy,
                 created_at = CURRENT_TIMESTAMP
             """,
             (
@@ -281,6 +320,10 @@ class FaceEmbeddingRepository:
                 vector_dim,
                 vector_dtype,
                 sqlite3.Binary(vector_blob),
+                preprocessing_version,
+                input_normalization,
+                similarity_metric,
+                crop_strategy,
             ),
         )
 

@@ -21,6 +21,10 @@ class EmbeddingIdentity:
 
     model_name: str
     model_version: str
+    preprocessing_version: str = "face-crop-v1"
+    input_normalization: str = "inception-resnet-v1"
+    similarity_metric: str = "cosine"
+    crop_strategy: str = "padded-square-224"
 
 
 class VersionedEmbeddingService:
@@ -51,6 +55,8 @@ class VersionedEmbeddingService:
             identity=EmbeddingIdentity(
                 model_name=config.model_name,
                 model_version=config.version_id(),
+                input_normalization=("inception-resnet-v1" if config.normalize else "0-1"),
+                crop_strategy=f"square-{config.image_size}",
             ),
         )
 
@@ -73,6 +79,10 @@ class VersionedEmbeddingService:
                 model_name=self.identity.model_name,
                 model_version=self.identity.model_version,
                 crop_sha256=crop_hash,
+                preprocessing_version=self.identity.preprocessing_version,
+                input_normalization=self.identity.input_normalization,
+                similarity_metric=self.identity.similarity_metric,
+                crop_strategy=self.identity.crop_strategy,
             )
             if cached is not None:
                 result.append(self._deserialize(cached.vector_blob, cached.vector_dim))
@@ -93,6 +103,10 @@ class VersionedEmbeddingService:
                     vector_dim=int(vector.shape[0]),
                     vector_dtype="float32",
                     vector_blob=self._serialize(vector),
+                    preprocessing_version=self.identity.preprocessing_version,
+                    input_normalization=self.identity.input_normalization,
+                    similarity_metric=self.identity.similarity_metric,
+                    crop_strategy=self.identity.crop_strategy,
                 )
                 result[index] = vector
 
@@ -116,4 +130,8 @@ class VersionedEmbeddingService:
     @staticmethod
     def _deserialize(vector_blob: bytes, vector_dim: int) -> np.ndarray:
         vector = np.frombuffer(vector_blob, dtype=np.float32)
+        if vector_dim <= 0 or vector.size != vector_dim:
+            raise ValueError(
+                f"Invalid cached embedding dimensions: metadata={vector_dim}, bytes={vector.size}"
+            )
         return vector.reshape(vector_dim).copy()

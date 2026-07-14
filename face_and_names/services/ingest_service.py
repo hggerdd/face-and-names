@@ -100,7 +100,15 @@ class IngestService:
         resolved_folders = [self._resolve_folder(folder) for folder in folders]
         self._ensure_scoped_to_root(resolved_folders)
 
-        session_id = self.sessions.create(folder_count=len(resolved_folders), image_count=0)
+        checkpoint_session_id = (
+            int(checkpoint["session_id"]) if checkpoint and "session_id" in checkpoint else None
+        )
+        session_id = checkpoint_session_id or self.sessions.create(
+            folder_count=len(resolved_folders), image_count=0
+        )
+        if checkpoint_session_id is not None:
+            self.sessions.update_progress(session_id, int(checkpoint.get("next_index", 0)))
+            self.conn.commit()
         self._existing_paths = {
             row[0] for row in self.conn.execute("SELECT relative_path FROM image").fetchall()
         }
@@ -121,7 +129,10 @@ class IngestService:
             paths.append(path)
         total = len(paths)
         cancelled = False
-        checkpoint_payload: dict[str, object] | None = {"next_index": start_index}
+        checkpoint_payload: dict[str, object] | None = {
+            "session_id": session_id,
+            "next_index": start_index,
+        }
 
         LOGGER.info(
             "Ingest session %s started: %d folders, %d images queued",
@@ -140,16 +151,25 @@ class IngestService:
             is_new = False
             thumb_bytes = None
             face_thumbs = None
-            checkpoint_payload = {"next_index": idx + 1}
+            checkpoint_payload = {"session_id": session_id, "next_index": idx + 1}
             try:
                 if cancel_event and cancel_event.is_set():
                     cancelled = True
                     break
                 if result.error:
                     raise result.error
-                is_new, thumb_bytes, face_thumbs, faces_added = self._ingest_one(
-                    session_id, image_path, result.raw_bytes, result, detector
-                )
+                self.conn.execute("SAVEPOINT ingest_image")
+                try:
+                    is_new, thumb_bytes, face_thumbs, faces_added = self._ingest_one(
+                        session_id, image_path, result.raw_bytes, result, detector
+                    )
+                    self.conn.execute("RELEASE SAVEPOINT ingest_image")
+                except Exception:
+                    self.conn.execute("ROLLBACK TO SAVEPOINT ingest_image")
+                    self.conn.execute("RELEASE SAVEPOINT ingest_image")
+                    self._existing_paths.discard(self._relative_path_str(image_path))
+                    raise
+                self.sessions.update_progress(session_id, idx + 1)
                 if is_new:
                     processed += 1
                     self.sessions.increment_image_count(session_id, delta=1)
@@ -191,6 +211,7 @@ class IngestService:
                     )
                 )
 
+        self.sessions.finish(session_id, "cancelled" if cancelled else "completed")
         self.conn.commit()
         LOGGER.info(
             "Ingest session %s finished: processed=%d skipped=%d errors=%d",

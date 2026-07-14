@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 6
 
 
 def _configure_connection(conn: sqlite3.Connection) -> None:
@@ -92,6 +92,15 @@ def _migrate(conn: sqlite3.Connection, from_version: int, to_version: int) -> No
     if version < 3:
         _ensure_face_embedding_table(conn)
         version = 3
+    if version < 4:
+        _ensure_person_name_columns(conn)
+        version = 4
+    if version < 5:
+        _ensure_import_progress_columns(conn)
+        version = 5
+    if version < 6:
+        _ensure_embedding_compatibility_columns(conn)
+        version = 6
     if version != to_version:
         raise RuntimeError(f"No migration path from {from_version} to {to_version}")
 
@@ -126,4 +135,57 @@ def _ensure_face_embedding_table(conn: sqlite3.Connection) -> None:
             ON face_embedding(model_name, model_version);
         """
     )
+    conn.commit()
+
+
+def _ensure_person_name_columns(conn: sqlite3.Connection) -> None:
+    """Add person display-name columns (v3 -> v4)."""
+    if (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'person'"
+        ).fetchone()
+        is None
+    ):
+        return
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(person)")}
+    if "first_name" not in cols:
+        conn.execute("ALTER TABLE person ADD COLUMN first_name TEXT NOT NULL DEFAULT ''")
+    if "last_name" not in cols:
+        conn.execute("ALTER TABLE person ADD COLUMN last_name TEXT NOT NULL DEFAULT ''")
+    if "short_name" not in cols:
+        conn.execute("ALTER TABLE person ADD COLUMN short_name TEXT")
+    conn.commit()
+
+
+def _ensure_import_progress_columns(conn: sqlite3.Connection) -> None:
+    """Add resumable import state (v4 -> v5)."""
+    if (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'import_session'"
+        ).fetchone()
+        is None
+    ):
+        return
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(import_session)")}
+    if "status" not in cols:
+        conn.execute(
+            "ALTER TABLE import_session ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'"
+        )
+    if "next_index" not in cols:
+        conn.execute("ALTER TABLE import_session ADD COLUMN next_index INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
+
+
+def _ensure_embedding_compatibility_columns(conn: sqlite3.Connection) -> None:
+    """Add preprocessing compatibility metadata (v5 -> v6)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(face_embedding)")}
+    additions = {
+        "preprocessing_version": "TEXT NOT NULL DEFAULT 'unknown'",
+        "input_normalization": "TEXT NOT NULL DEFAULT 'unknown'",
+        "similarity_metric": "TEXT NOT NULL DEFAULT 'unknown'",
+        "crop_strategy": "TEXT NOT NULL DEFAULT 'unknown'",
+    }
+    for name, definition in additions.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE face_embedding ADD COLUMN {name} {definition}")
     conn.commit()

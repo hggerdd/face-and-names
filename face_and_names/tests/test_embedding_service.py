@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from face_and_names.models.db import initialize_database
@@ -90,6 +91,16 @@ def test_versioned_embedding_service_reuses_cached_vectors(tmp_path: Path) -> No
     assert np.array_equal(first, second)
     assert embedder.calls == 1
     assert conn.execute("SELECT COUNT(*) FROM face_embedding").fetchone()[0] == 1
+    metadata = conn.execute(
+        "SELECT preprocessing_version, input_normalization, similarity_metric, crop_strategy "
+        "FROM face_embedding"
+    ).fetchone()
+    assert metadata == ("face-crop-v1", "inception-resnet-v1", "cosine", "padded-square-224")
+
+
+def test_invalid_cached_embedding_dimensions_are_rejected() -> None:
+    with pytest.raises(ValueError, match="Invalid cached embedding dimensions"):
+        VersionedEmbeddingService._deserialize(b"\x00" * 4, 2)
 
 
 def test_versioned_embedding_service_recomputes_when_model_version_changes(

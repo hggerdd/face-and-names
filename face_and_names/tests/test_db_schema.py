@@ -126,7 +126,10 @@ def test_migration_from_v2_adds_face_embedding_table(tmp_path: Path) -> None:
     migrated = initialize_database(db_path)
 
     assert "face_embedding" in _table_names(migrated)
-    assert migrated.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()[0] == 3
+    assert (
+        migrated.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()[0]
+        == SCHEMA_VERSION
+    )
 
 
 def test_unique_content_hash_enforced(tmp_path: Path) -> None:

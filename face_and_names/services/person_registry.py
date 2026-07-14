@@ -9,6 +9,9 @@ against this registry first to keep IDs stable across multiple DB files.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -38,6 +41,10 @@ class PersonRecord:
             "notes": self.notes,
             "aliases": list(self.aliases),
         }
+
+
+class RegistryFormatError(ValueError):
+    """Raised when an existing registry cannot be safely loaded."""
 
 
 class PersonRegistry:
@@ -152,6 +159,37 @@ class PersonRegistry:
         self._data["people"] = [p.to_dict() for p in self._index.values()]
         self._persist()
 
+    def snapshot(self) -> bytes | None:
+        """Return the current on-disk registry for coordinated transactions."""
+        try:
+            return self.path.read_bytes()
+        except FileNotFoundError:
+            return None
+
+    def restore(self, snapshot: bytes | None) -> None:
+        """Restore a previously captured registry snapshot atomically."""
+        if snapshot is None:
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent)
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(snapshot)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temp_name, self.path)
+            except Exception:
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+                raise
+        self._load()
+
     # Internal helpers ----------------------------------------------------
     def _reserve_id(self, preferred: int | None = None) -> int:
         if preferred is not None and preferred not in self._index:
@@ -182,18 +220,29 @@ class PersonRegistry:
         return self._index[person_id]
 
     def _copy_person(self, record: PersonRecord) -> PersonRecord:
-        return PersonRecord(**record.to_dict())
+        return PersonRecord(**deepcopy(record.to_dict()))
 
     def _load(self) -> None:
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
-                self._data = data
-            except Exception:
-                # Fall back to empty registry on parse errors
-                self._data = {"version": self.VERSION, "next_id": 1, "people": []}
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise RegistryFormatError(f"Unable to read person registry {self.path}") from exc
+            if not isinstance(data, dict):
+                raise RegistryFormatError("Person registry root must be a JSON object")
+            if data.get("version") != self.VERSION:
+                raise RegistryFormatError(
+                    f"Unsupported person registry version: {data.get('version')!r}"
+                )
+            if not isinstance(data.get("people"), list):
+                raise RegistryFormatError("Person registry 'people' must be a list")
+            self._data = data
+        else:
+            self._persist()
         self._index = {}
         for person in self._data.get("people", []):
+            if not isinstance(person, dict) or "id" not in person:
+                raise RegistryFormatError("Each registry person must be an object with an id")
             try:
                 record = PersonRecord(
                     id=int(person["id"]),
@@ -205,28 +254,38 @@ class PersonRegistry:
                     notes=person.get("notes"),
                     aliases=list(person.get("aliases") or []),
                 )
-            except Exception:
-                continue
+            except (TypeError, ValueError) as exc:
+                raise RegistryFormatError("Invalid person record in registry") from exc
+            if record.id in self._index:
+                raise RegistryFormatError(f"Duplicate person id in registry: {record.id}")
             self._index[record.id] = record
             self._data["next_id"] = max(int(self._data.get("next_id", 1)), record.id + 1)
-        # Normalize stored representation
-        self._data["version"] = self.VERSION
-        self._data["people"] = [p.to_dict() for p in self._index.values()]
-        self._persist()
+        self._data.setdefault("next_id", 1)
 
     def _persist(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(
-                {
-                    "version": self.VERSION,
-                    "next_id": int(self._data.get("next_id", 1)),
-                    "people": [p.to_dict() for p in self._index.values()],
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+        payload = dict(self._data)
+        payload.update(
+            {
+                "version": self.VERSION,
+                "next_id": int(self._data.get("next_id", 1)),
+                "people": [p.to_dict() for p in self._index.values()],
+            }
         )
+        fd, temp_name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, self.path)
+        except Exception:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+            raise
 
 
 def default_registry_path(base_dir: Path | None = None) -> Path:

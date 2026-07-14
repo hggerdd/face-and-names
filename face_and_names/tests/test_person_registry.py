@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from face_and_names.services.person_registry import PersonRegistry
+from face_and_names.services.person_registry import PersonRegistry, RegistryFormatError
 
 
 @pytest.fixture
@@ -24,6 +24,16 @@ def test_init_creates_empty_registry(registry_file):
     data = json.loads(registry_file.read_text(encoding="utf-8"))
     assert data["people"] == []
     assert data["next_id"] == 1
+
+
+def test_malformed_registry_is_not_replaced(registry_file):
+    original = b'{"version": 1, "people": [}'
+    registry_file.write_bytes(original)
+
+    with pytest.raises(RegistryFormatError):
+        PersonRegistry(registry_file)
+
+    assert registry_file.read_bytes() == original
 
 
 def test_add_person(registry):
