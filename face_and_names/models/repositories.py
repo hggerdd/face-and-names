@@ -8,6 +8,7 @@ business logic in services while centralizing SQL and schema assumptions.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence
 
 
@@ -195,6 +196,93 @@ class FaceRepository:
             (face_id,),
         )
         return cursor.fetchone()
+
+
+@dataclass(frozen=True)
+class FaceEmbeddingRecord:
+    """Persisted embedding vector metadata and raw bytes."""
+
+    face_id: int
+    model_name: str
+    model_version: str
+    crop_sha256: str
+    vector_dim: int
+    vector_dtype: str
+    vector_blob: bytes
+
+
+class FaceEmbeddingRepository:
+    """Store and load versioned face embeddings."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def get(
+        self,
+        *,
+        face_id: int,
+        model_name: str,
+        model_version: str,
+        crop_sha256: str,
+    ) -> FaceEmbeddingRecord | None:
+        row = self.conn.execute(
+            """
+            SELECT face_id, model_name, model_version, crop_sha256,
+                   vector_dim, vector_dtype, vector_blob
+            FROM face_embedding
+            WHERE face_id = ?
+              AND model_name = ?
+              AND model_version = ?
+              AND crop_sha256 = ?
+            """,
+            (face_id, model_name, model_version, crop_sha256),
+        ).fetchone()
+        if row is None:
+            return None
+        return FaceEmbeddingRecord(
+            face_id=int(row[0]),
+            model_name=str(row[1]),
+            model_version=str(row[2]),
+            crop_sha256=str(row[3]),
+            vector_dim=int(row[4]),
+            vector_dtype=str(row[5]),
+            vector_blob=bytes(row[6]),
+        )
+
+    def upsert(
+        self,
+        *,
+        face_id: int,
+        model_name: str,
+        model_version: str,
+        crop_sha256: str,
+        vector_dim: int,
+        vector_dtype: str,
+        vector_blob: bytes,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO face_embedding (
+                face_id, model_name, model_version, crop_sha256,
+                vector_dim, vector_dtype, vector_blob
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(face_id, model_name, model_version, crop_sha256)
+            DO UPDATE SET
+                vector_dim = excluded.vector_dim,
+                vector_dtype = excluded.vector_dtype,
+                vector_blob = excluded.vector_blob,
+                created_at = CURRENT_TIMESTAMP
+            """,
+            (
+                face_id,
+                model_name,
+                model_version,
+                crop_sha256,
+                vector_dim,
+                vector_dtype,
+                sqlite3.Binary(vector_blob),
+            ),
+        )
 
 
 class PersonRepository:

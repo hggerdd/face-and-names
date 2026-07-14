@@ -70,6 +70,22 @@ CREATE INDEX IF NOT EXISTS idx_face_cluster_id ON face(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_face_person_id ON face(person_id);
 CREATE INDEX IF NOT EXISTS idx_face_predicted_person_id ON face(predicted_person_id);
 
+CREATE TABLE IF NOT EXISTS face_embedding (
+    id INTEGER PRIMARY KEY,
+    face_id INTEGER NOT NULL REFERENCES face(id) ON DELETE CASCADE,
+    model_name TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    crop_sha256 TEXT NOT NULL,
+    vector_dim INTEGER NOT NULL,
+    vector_dtype TEXT NOT NULL DEFAULT 'float32',
+    vector_blob BLOB NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (face_id, model_name, model_version, crop_sha256)
+);
+
+CREATE INDEX IF NOT EXISTS idx_face_embedding_face_id ON face_embedding(face_id);
+CREATE INDEX IF NOT EXISTS idx_face_embedding_model ON face_embedding(model_name, model_version);
+
 CREATE TABLE IF NOT EXISTS person (
     id INTEGER PRIMARY KEY,
     primary_name TEXT NOT NULL UNIQUE,

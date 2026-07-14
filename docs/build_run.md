@@ -1,24 +1,32 @@
 # Build & Run
 
 ## Environment
-- Python **3.14** (required; enforced via `.python-version`, `pyproject.toml` `requires-python = ">=3.14"`, and `ruff.toml` `target-version = "py313"` — the highest version supported by Ruff). `uv` for env/deps. Create venv: `uv venv .venv` and activate.
-- Install deps: `UV_LINK_MODE=copy uv sync --index-strategy unsafe-best-match` (needed for PyTorch CPU wheels + PyPI).
-- Optional extras:
-  - ArcFace ONNX: `uv sync --extra arcface` (installs onnxruntime/opencv; ArcFace model downloaded on first use or place `arcface_r100_v1.onnx` in cwd).
+- Python 3.14 is required by `.python-version` and `pyproject.toml`.
+- Use `uv` for environment and dependency management.
+- Create a virtual environment with `uv venv .venv`, then activate it.
+- Install dependencies with `uv sync --index-strategy unsafe-best-match`.
+- Optional ArcFace support: `uv sync --extra arcface`.
 
 ## Commands
 - Run app: `uv run python -m face_and_names`
-- Tests: `uv run --index-strategy unsafe-best-match pytest`
-- Lint/format: `uv run ruff check .` / `uv run ruff format .`
-- Training: `uv run python -m face_and_names.train_model` (uses verified faces in DB; artifacts to `model/`)
+- Tests: `uv run --extra dev pytest -q`
+- Lint: `uv run ruff check .`
+- Format: `uv run ruff format .`
+- Training: `uv run python -m face_and_names.train_model`
 
 ## Models & Data
-- Detector weights: `yolov11n-face.pt` in repo; used by detector adapter (`DetectorAdapter` supports YOLO only; MTCNN is listed as an optional extra in `pyproject.toml` but not wired into the adapter).
-- Prediction model: artifacts under `model/` — `classifier.pkl` (contains both the classifier and the `StandardScaler`), `person_id_mapping.json`, `embedding_config.json`, `metrics.json`, `version.txt`.
-- ArcFace clustering: ArcFace ONNX auto-download (or manual `arcface_r100_v1.onnx` in cwd); falls back to FaceNet if missing.
-- DB Root: `faces.db` plus images under same root; logs under `logs/`; registry under `persons/persons.json`.
-- Legacy artifacts under `face_recognition_models/` (e.g., `face_classifier.joblib`, `face_encoder_complete.pth`, `mtcnn_complete.pth`, `label_encoder.joblib`, `model_config.json`) are **not** used by the current code and kept for reference only.
+- Detector weights: `yolov11n-face.pt`.
+- Prediction artifacts: `model/classifier.pkl`, `model/person_id_mapping.json`,
+  `model/embedding_config.json`, `model/metrics.json`, and `model/version.txt`.
+- Versioned embeddings: `face_embedding` in `faces.db` caches vectors by face ID,
+  crop SHA-256, model name, and model version.
+- Training, batch prediction, and embedding-based clustering reuse cached embeddings.
+- ArcFace clustering uses `arcface_r100_v1.onnx` when available and falls back to FaceNet.
+- DB Root contains `faces.db` plus imported images; logs live under `logs/`; registry lives
+  under `persons/persons.json`.
+- Legacy artifacts under `face_recognition_models/` are kept for reference and are not used
+  by the current code.
 
 ## Notes
 - Offline by default; no outbound calls except optional model downloads.
-- Keep UI responsive: heavy tasks run via background workers; cancel/resume supported for ingest/prediction/clustering.
+- Heavy tasks run via background workers to keep the UI responsive.

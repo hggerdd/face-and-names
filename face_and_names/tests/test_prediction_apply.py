@@ -43,6 +43,9 @@ def test_apply_predictions_all(db, service):
     count = apply_predictions(db, service)
 
     assert count == 2
+    service.bind_connection.assert_called_once_with(db)
+    assert service.predict_batch.call_args_list[0].kwargs["face_ids"] == [1]
+    assert service.predict_batch.call_args_list[1].kwargs["face_ids"] == [2]
     rows = db.execute(
         "SELECT id, predicted_person_id, prediction_confidence FROM face ORDER BY id"
     ).fetchall()

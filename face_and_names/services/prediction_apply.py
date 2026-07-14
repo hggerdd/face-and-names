@@ -51,6 +51,7 @@ def apply_predictions(
         return 0
 
     repo = FaceRepository(conn)
+    service.bind_connection(conn)
     count = 0
     for idx, (face_id, blob, rel_path, filename) in enumerate(rows, start=1):
         if should_stop and should_stop():
@@ -58,7 +59,7 @@ def apply_predictions(
         label = rel_path or filename or f"face_{face_id}"
         if progress:
             progress(f"Predicting {label}", int(idx / total * 100))
-        res = service.predict_batch([blob])[0]
+        res = service.predict_batch([blob], face_ids=[int(face_id)])[0]
         if assign_person:
             repo.update_person(face_id, res.get("person_id"))
         conn.execute(

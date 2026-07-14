@@ -163,6 +163,7 @@ def test_train_and_predict_round_trip(tmp_path: Path) -> None:
     )
     assert metrics["classes"] == 2
     assert metrics["samples"] == 4
+    assert conn.execute("SELECT COUNT(*) FROM face_embedding").fetchone()[0] == 4
 
     bundle = load_artifacts(cfg.model_dir, embedder_factory=_dummy_embedder_factory)
     assert bundle.person_ids == [1, 2] or bundle.person_ids == [2, 1]

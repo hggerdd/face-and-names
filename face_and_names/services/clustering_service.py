@@ -18,6 +18,10 @@ from facenet_pytorch import InceptionResnetV1
 from PIL import Image, ImageOps
 from sklearn.cluster import DBSCAN, KMeans
 
+from face_and_names.models.repositories import FaceEmbeddingRepository
+from face_and_names.services.embedding_service import VersionedEmbeddingService
+from face_and_names.training.embedding import EmbeddingConfig
+
 LOGGER = logging.getLogger(__name__)
 
 ARCFACE_MODEL_NAME = "arcface_r100_v1.onnx"
@@ -73,6 +77,8 @@ class ClusteringService:
         self._arcface_session = None
         self._arcface_io: tuple[str, str] | None = None
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.embedding_repo = FaceEmbeddingRepository(conn)
+        self._facenet_cache: VersionedEmbeddingService | None = None
 
     def cluster_faces(self, options: ClusteringOptions | None = None) -> List[ClusterResult]:
         opts = options or ClusteringOptions()
@@ -80,12 +86,17 @@ class ClusteringService:
         if not faces:
             return []
 
-        vectors = [self._feature_vector(crop, opts) for _, crop, *_ in faces]
+        vectors = [self._feature_vector(face_id, crop, opts) for face_id, crop, *_ in faces]
         X = np.stack(vectors)
 
         algo = opts.algorithm.lower()
         if algo == "dbscan":
-            labels = self._run_dbscan(X, eps=opts.eps, min_samples=int(opts.min_samples))
+            labels = self._run_dbscan(
+                X,
+                eps=opts.eps,
+                min_samples=int(opts.min_samples),
+                metric=self._distance_metric(opts.feature_source),
+            )
         elif algo == "kmeans":
             labels = self._run_kmeans(X, n_clusters=int(opts.k_clusters))
         else:
@@ -159,7 +170,9 @@ class ClusteringService:
                 continue
             yield (int(row[0]), bytes(row[1]), row[2], row[3], row[4])
 
-    def _feature_vector(self, crop_bytes: bytes, opts: ClusteringOptions) -> np.ndarray:
+    def _feature_vector(
+        self, face_id: int, crop_bytes: bytes, opts: ClusteringOptions
+    ) -> np.ndarray:
         with Image.open(BytesIO(crop_bytes)) as img:
             img.load()
             if opts.feature_source == "phash":
@@ -171,11 +184,44 @@ class ClusteringService:
             elif opts.feature_source == "raw":
                 return self._raw_vector(img, opts)
             elif opts.feature_source == "embedding":
-                return self._embedding_vector(img, opts)
+                return self._facenet_embedding_cache().embed_face_blob(face_id, crop_bytes)
             elif opts.feature_source == "arcface":
-                return self._arcface_vector(img, opts)
+                return self._cached_arcface_vector(face_id, crop_bytes, img, opts)
             else:
                 raise ValueError(f"Unsupported feature_source: {opts.feature_source}")
+
+    def _facenet_embedding_cache(self) -> VersionedEmbeddingService:
+        if self._facenet_cache is None:
+            config = EmbeddingConfig()
+            self._facenet_cache = VersionedEmbeddingService.from_config(self.conn, config)
+        return self._facenet_cache
+
+    def _cached_arcface_vector(
+        self, face_id: int, crop_bytes: bytes, img: Image.Image, opts: ClusteringOptions
+    ) -> np.ndarray:
+        model_name = "arcface_onnx"
+        model_version = f"{ARCFACE_MODEL_NAME}:size=112:norm"
+        crop_hash = VersionedEmbeddingService.crop_sha256(crop_bytes)
+        cached = self.embedding_repo.get(
+            face_id=face_id,
+            model_name=model_name,
+            model_version=model_version,
+            crop_sha256=crop_hash,
+        )
+        if cached is not None:
+            return VersionedEmbeddingService._deserialize(cached.vector_blob, cached.vector_dim)
+
+        vector = np.asarray(self._arcface_vector(img, opts), dtype=np.float32)
+        self.embedding_repo.upsert(
+            face_id=face_id,
+            model_name=model_name,
+            model_version=model_version,
+            crop_sha256=crop_hash,
+            vector_dim=int(vector.shape[0]),
+            vector_dtype="float32",
+            vector_blob=VersionedEmbeddingService._serialize(vector),
+        )
+        return vector
 
     def _preprocess_for_hash(self, img: Image.Image, opts: ClusteringOptions) -> Image.Image:
         """
@@ -294,10 +340,16 @@ class ClusteringService:
         LOGGER.error("All ArcFace model downloads failed; place %s manually", path)
         return False
 
-    def _run_dbscan(self, X: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
+    @staticmethod
+    def _distance_metric(feature_source: str) -> str:
+        return "hamming" if feature_source in {"phash", "phash_raw"} else "cosine"
+
+    def _run_dbscan(
+        self, X: np.ndarray, eps: float, min_samples: int, metric: str = "hamming"
+    ) -> np.ndarray:
         if len(X) == 1:
             return np.array([0], dtype=int)  # single face, treat as noise/cluster 0
-        model = DBSCAN(eps=eps, min_samples=min_samples, metric="hamming")
+        model = DBSCAN(eps=eps, min_samples=min_samples, metric=metric)
         return model.fit_predict(X)
 
     def _run_kmeans(self, X: np.ndarray, n_clusters: int) -> np.ndarray:

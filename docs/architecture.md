@@ -54,6 +54,8 @@ Domain services implement workflows that are not tied to one page.
   applies inline prediction.
 - `PredictionService`: loads model artifacts and predicts person candidates.
 - `ClusteringService`: clusters faces using configured feature sources and writes cluster IDs.
+- `VersionedEmbeddingService`: computes and reuses embeddings from `face_embedding`, keyed by
+  face ID, crop hash, model name, and model version.
 - `PeopleService`: CRUD, merge, aliases, groups, and registry synchronization.
 - `AdvancedSearchService`: search query construction and image path resolution.
 - `DiagnosticsService`: lightweight health checks for database, registry, models, and detector.
@@ -74,9 +76,11 @@ small and should be used from services/controllers instead of UI pages.
 - Face review: UI filter state -> page controller query -> view records -> reusable face tiles
   -> controller mutation methods.
 - Prediction training/apply: UI starts worker -> worker delegates to prediction/training service
-  -> progress and final metrics return to the page.
+  -> embeddings are loaded from or written to `face_embedding` -> progress and final metrics
+  return to the page.
 - Clustering: UI starts worker -> worker delegates to `ClusteringService` -> controller-backed
-  page actions handle review and assignment.
+  page actions handle review and assignment. FaceNet/ArcFace feature vectors are cached as
+  versioned embeddings.
 - People: UI person/date/view state -> `PeopleGroupsController` -> paged records and timeline
   dates -> controller mutation methods.
 
@@ -89,6 +93,7 @@ small and should be used from services/controllers instead of UI pages.
 
 ## Storage and Config
 - Active database: `faces.db` under the selected DB Root.
+- Versioned embeddings: `face_embedding` stores one vector per face, model version, and crop hash.
 - Person registry: `persons/persons.json`, synchronized into the active database on open.
 - Logs: `logs/` under the active DB Root.
 - Detector weights: `yolov11n-face.pt`.

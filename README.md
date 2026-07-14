@@ -45,6 +45,7 @@ they are implemented.
 ## Data and Models
 
 - Active database: `faces.db` under the selected DB Root.
+- Versioned embeddings: stored in `face_embedding` inside `faces.db` and reused by training, batch prediction, and embedding-based clustering.
 - Person registry: `persons/persons.json`.
 - Logs: `logs/` under the active DB Root.
 - Detector weights: `yolov11n-face.pt`.

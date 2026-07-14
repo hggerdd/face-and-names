@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _configure_connection(conn: sqlite3.Connection) -> None:
@@ -89,6 +89,9 @@ def _migrate(conn: sqlite3.Connection, from_version: int, to_version: int) -> No
     if version < 2:
         _ensure_face_detection_index_column(conn)
         version = 2
+    if version < 3:
+        _ensure_face_embedding_table(conn)
+        version = 3
     if version != to_version:
         raise RuntimeError(f"No migration path from {from_version} to {to_version}")
 
@@ -99,3 +102,28 @@ def _ensure_face_detection_index_column(conn: sqlite3.Connection) -> None:
     if "face_detection_index" not in cols:
         conn.execute("ALTER TABLE face ADD COLUMN face_detection_index REAL;")
         conn.commit()
+
+
+def _ensure_face_embedding_table(conn: sqlite3.Connection) -> None:
+    """Add versioned face embeddings table (v2 -> v3)."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS face_embedding (
+            id INTEGER PRIMARY KEY,
+            face_id INTEGER NOT NULL REFERENCES face(id) ON DELETE CASCADE,
+            model_name TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            crop_sha256 TEXT NOT NULL,
+            vector_dim INTEGER NOT NULL,
+            vector_dtype TEXT NOT NULL DEFAULT 'float32',
+            vector_blob BLOB NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (face_id, model_name, model_version, crop_sha256)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_face_embedding_face_id ON face_embedding(face_id);
+        CREATE INDEX IF NOT EXISTS idx_face_embedding_model
+            ON face_embedding(model_name, model_version);
+        """
+    )
+    conn.commit()

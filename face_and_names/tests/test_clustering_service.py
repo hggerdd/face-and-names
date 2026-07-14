@@ -180,3 +180,14 @@ def test_cluster_raw_downscaled(tmp_path: Path) -> None:
 
     clusters = [c for c in results if not c.is_noise]
     assert clusters and len(clusters[0].faces) >= 2
+
+
+def test_clustering_distance_metric_matches_feature_type(tmp_path: Path) -> None:
+    conn = initialize_database(tmp_path / "faces.db")
+    service = ClusteringService(conn)
+
+    assert service._distance_metric("phash") == "hamming"
+    assert service._distance_metric("phash_raw") == "hamming"
+    assert service._distance_metric("embedding") == "cosine"
+    assert service._distance_metric("arcface") == "cosine"
+    assert service._distance_metric("raw") == "cosine"

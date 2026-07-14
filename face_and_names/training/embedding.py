@@ -24,6 +24,11 @@ class EmbeddingConfig:
     normalize: bool = True
     device: str | None = None
 
+    def version_id(self) -> str:
+        """Return the stable cache key for this embedding configuration."""
+        normalize = "norm" if self.normalize else "raw"
+        return f"{self.pretrained}:size={self.image_size}:{normalize}"
+
 
 class EmbeddingModel(Protocol):
     def embed_images(self, images: List[Image.Image]) -> np.ndarray: ...

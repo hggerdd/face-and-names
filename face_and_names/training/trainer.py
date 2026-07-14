@@ -21,6 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from face_and_names.models.db import connect
+from face_and_names.services.embedding_service import VersionedEmbeddingService
 from face_and_names.training.data_loader import load_verified_faces
 from face_and_names.training.embedding import EmbeddingConfig, EmbeddingModel, FacenetEmbedder
 from face_and_names.training.model_io import save_artifacts
@@ -93,6 +94,7 @@ def train_model_from_db(
     classifier_factory = classifier_factory or _default_classifier_factory
 
     conn = connect(db_path)
+    embedding_service = VersionedEmbeddingService.from_config(conn, cfg.embedding, embedder)
     samples = load_verified_faces(conn)
     if progress:
         progress("loaded", len(samples), len(samples))
@@ -125,14 +127,15 @@ def train_model_from_db(
     for idx, sample in enumerate(samples, start=1):
         if should_stop and should_stop():
             raise RuntimeError("Training cancelled during embedding")
-        vec = embedder.embed_images([sample.image])
+        vec = embedding_service.embed_face_blob(sample.face_id, sample.crop_blob)
         if vec.size == 0:
             continue
-        embeddings.append(vec[0])
+        embeddings.append(vec)
         if progress:
             progress(f"embedding {sample.source}", idx, total)
     if not embeddings:
         raise RuntimeError("No embeddings produced")
+    conn.commit()
     embeddings = np.stack(embeddings, axis=0)
     scaler = StandardScaler()
     X_train = scaler.fit_transform(np.array([embeddings[i] for i in train_idx]))
