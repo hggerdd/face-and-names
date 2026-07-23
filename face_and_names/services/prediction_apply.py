@@ -6,10 +6,11 @@ This is modular so it can be invoked from UI or from other workflows (e.g., impo
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Callable
 
-from face_and_names.models.repositories import FaceRepository
+from face_and_names.models.repositories import AuditLogRepository, FaceRepository
 from face_and_names.services.prediction_service import PredictionService
 
 
@@ -35,22 +36,13 @@ def apply_predictions(
     Returns:
         count of faces processed.
     """
-    filter_clause = "AND f.person_id IS NULL" if unnamed_only else ""
-    rows = conn.execute(
-        f"""
-        SELECT f.id, f.face_crop_blob, i.relative_path, i.filename
-        FROM face f
-        JOIN image i ON i.id = f.image_id
-        WHERE f.face_crop_blob IS NOT NULL
-        {filter_clause}
-        ORDER BY f.id
-        """
-    ).fetchall()
+    repo = FaceRepository(conn)
+    rows = repo.list_prediction_candidates(unnamed_only=unnamed_only)
     total = len(rows)
     if total == 0:
         return 0
 
-    repo = FaceRepository(conn)
+    audit = AuditLogRepository(conn)
     service.bind_connection(conn)
     count = 0
     for idx, (face_id, blob, rel_path, filename) in enumerate(rows, start=1):
@@ -60,11 +52,22 @@ def apply_predictions(
         if progress:
             progress(f"Predicting {label}", int(idx / total * 100))
         res = service.predict_batch([blob], face_ids=[int(face_id)])[0]
-        if assign_person:
-            repo.update_person(face_id, res.get("person_id"))
-        conn.execute(
-            "UPDATE face SET predicted_person_id = ?, prediction_confidence = ? WHERE id = ?",
-            (res.get("person_id"), res.get("confidence"), face_id),
+        repo.update_prediction(
+            int(face_id),
+            res.get("person_id"),
+            res.get("confidence"),
+            assign_person=assign_person,
+        )
+        audit.add(
+            action="apply_prediction",
+            entity_type="face",
+            entity_id=int(face_id),
+            details=json.dumps(
+                {
+                    "predicted_person_id": res.get("person_id"),
+                    "assigned": assign_person,
+                }
+            ),
         )
         count += 1
     conn.commit()

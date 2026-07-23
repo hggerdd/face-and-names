@@ -57,6 +57,10 @@ def test_create_person_adds_aliases(tmp_path: Path) -> None:
     # Registry persisted to disk
     reg = PersonRegistry(registry_path)
     assert reg.get(pid).primary_name == "Ali"
+    assert conn.execute(
+        "SELECT action, entity_type FROM audit_log WHERE entity_id = ? ORDER BY id DESC LIMIT 1",
+        (pid,),
+    ).fetchone() == ("create", "person")
 
 
 def test_merge_people_rebinds_faces_and_aliases(tmp_path: Path) -> None:

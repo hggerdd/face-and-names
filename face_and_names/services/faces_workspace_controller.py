@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from face_and_names.models.repositories import FaceRepository
+from face_and_names.models.repositories import AuditLogRepository, FaceRepository
 from face_and_names.services.people_service import PeopleService
 
 WorkspaceMode = Literal["all", "unnamed", "predicted", "clustered"]
@@ -99,35 +100,17 @@ class FacesWorkspaceController:
         self.db_root = db_root
         self.people_service = people_service
         self.face_repo = FaceRepository(conn)
+        self.audit = AuditLogRepository(conn)
 
     def list_folders(self) -> list[str]:
         """Return known image folders in display order."""
-        rows = self.conn.execute("SELECT DISTINCT sub_folder FROM image ORDER BY sub_folder")
-        return [str(row[0]) for row in rows.fetchall()]
+        return self.face_repo.list_image_folders()
 
     def load_images(
         self, folder: str, offset: int, limit: int, mode: WorkspaceMode = "all"
     ) -> tuple[list[ImageRecord], int]:
         """Load a page of image records for one folder."""
-        mode_clause = self._image_mode_clause(mode)
-        params: list[object] = [folder]
-        total = int(
-            self.conn.execute(
-                f"SELECT COUNT(*) FROM image i WHERE i.sub_folder = ?{mode_clause}",
-                params,
-            ).fetchone()[0]
-        )
-        params.extend([limit, offset])
-        rows = self.conn.execute(
-            f"""
-            SELECT id, filename, relative_path, thumbnail_blob, width, height
-            FROM image i
-            WHERE i.sub_folder = ?{mode_clause}
-            ORDER BY filename
-            LIMIT ? OFFSET ?
-            """,
-            params,
-        ).fetchall()
+        rows, total = self.face_repo.load_images(folder, mode, limit=limit, offset=offset)
         return [
             ImageRecord(
                 image_id=int(row[0]),
@@ -142,30 +125,7 @@ class FacesWorkspaceController:
 
     def workspace_summary(self, folder: str | None = None) -> WorkspaceSummary:
         """Return workspace counts, optionally scoped to a folder."""
-        image_where = ""
-        face_join_where = ""
-        params: list[object] = []
-        if folder is not None:
-            image_where = "WHERE sub_folder = ?"
-            face_join_where = "WHERE i.sub_folder = ?"
-            params.append(folder)
-
-        images = int(
-            self.conn.execute(f"SELECT COUNT(*) FROM image {image_where}", params).fetchone()[0]
-        )
-        face_rows = self.conn.execute(
-            f"""
-            SELECT
-                COUNT(f.id),
-                SUM(CASE WHEN f.person_id IS NULL THEN 1 ELSE 0 END),
-                SUM(CASE WHEN f.predicted_person_id IS NOT NULL THEN 1 ELSE 0 END),
-                SUM(CASE WHEN f.cluster_id IS NOT NULL THEN 1 ELSE 0 END)
-            FROM face f
-            JOIN image i ON i.id = f.image_id
-            {face_join_where}
-            """,
-            params,
-        ).fetchone()
+        images, face_rows = self.face_repo.workspace_summary(folder)
         return WorkspaceSummary(
             images=images,
             faces=int(face_rows[0] or 0),
@@ -176,36 +136,15 @@ class FacesWorkspaceController:
 
     def load_face_page(self, filters: FaceWorkspaceFilters, offset: int, limit: int) -> FacePage:
         """Load a page of faces for the unified workspace grid."""
-        where, params = self._face_filter_clause(filters)
-        total = int(
-            self.conn.execute(
-                f"""
-                SELECT COUNT(*)
-                FROM face f
-                JOIN image i ON i.id = f.image_id
-                LEFT JOIN person p ON p.id = f.person_id
-                LEFT JOIN person pp ON pp.id = f.predicted_person_id
-                WHERE {where}
-                """,
-                params,
-            ).fetchone()[0]
+        rows, total = self.face_repo.load_face_page(
+            folder=filters.folder,
+            mode=filters.mode,
+            confidence_min=filters.confidence_min,
+            confidence_max=filters.confidence_max,
+            differs_from_name=filters.differs_from_name,
+            offset=offset,
+            limit=limit,
         )
-        page_params = [*params, limit, offset]
-        rows = self.conn.execute(
-            f"""
-            SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id,
-                   pp.primary_name, f.prediction_confidence, f.face_crop_blob,
-                   f.image_id, i.filename, i.relative_path, f.cluster_id
-            FROM face f
-            JOIN image i ON i.id = f.image_id
-            LEFT JOIN person p ON p.id = f.person_id
-            LEFT JOIN person pp ON pp.id = f.predicted_person_id
-            WHERE {where}
-            ORDER BY i.filename, f.id
-            LIMIT ? OFFSET ?
-            """,
-            page_params,
-        ).fetchall()
         return FacePage(
             faces=[
                 FaceTileRecord(
@@ -230,57 +169,36 @@ class FacesWorkspaceController:
         """Assign predicted people to the selected faces where a prediction exists."""
         if not face_ids:
             return 0
-        placeholders = ", ".join("?" for _ in face_ids)
-        cursor = self.conn.execute(
-            f"""
-            UPDATE face
-            SET person_id = predicted_person_id
-            WHERE id IN ({placeholders})
-              AND predicted_person_id IS NOT NULL
-            """,
-            face_ids,
+        cursor = self.face_repo.accept_predictions(face_ids)
+        self.audit.add(
+            action="accept_predictions",
+            entity_type="face_batch",
+            details=json.dumps({"count": int(cursor)}),
         )
         self.conn.commit()
-        return int(cursor.rowcount)
+        return int(cursor)
 
     def assign_person_to_faces(self, face_ids: list[int], person_id: int | None) -> int:
         """Assign one person to multiple selected faces."""
         if not face_ids:
             return 0
-        placeholders = ", ".join("?" for _ in face_ids)
-        cursor = self.conn.execute(
-            f"UPDATE face SET person_id = ? WHERE id IN ({placeholders})",
-            [person_id, *face_ids],
+        cursor = self.face_repo.assign_person_to_faces(face_ids, person_id)
+        self.audit.add(
+            action="assign_person",
+            entity_type="face_batch",
+            details=json.dumps({"count": int(cursor), "person_id": person_id}),
         )
         self.conn.commit()
-        return int(cursor.rowcount)
+        return int(cursor)
 
     def load_face_boxes(self, image_id: int) -> list[tuple[float, float, float, float]]:
         """Return relative face boxes for one image."""
-        rows = self.conn.execute(
-            """
-            SELECT bbox_rel_x, bbox_rel_y, bbox_rel_w, bbox_rel_h
-            FROM face
-            WHERE image_id = ?
-            """,
-            (image_id,),
-        ).fetchall()
+        rows = self.face_repo.load_face_boxes(image_id)
         return [(float(row[0]), float(row[1]), float(row[2]), float(row[3])) for row in rows]
 
     def load_face_tiles(self, image_id: int) -> list[FaceTileRecord]:
         """Return face tile records for one image."""
-        rows = self.conn.execute(
-            """
-            SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id,
-                   pp.primary_name, f.prediction_confidence, f.face_crop_blob
-            FROM face f
-            LEFT JOIN person p ON p.id = f.person_id
-            LEFT JOIN person pp ON pp.id = f.predicted_person_id
-            WHERE f.image_id = ?
-            ORDER BY f.id
-            """,
-            (image_id,),
-        ).fetchall()
+        rows = self.face_repo.load_face_tiles(image_id)
         return [
             FaceTileRecord(
                 face_id=int(row[0]),
@@ -296,20 +214,7 @@ class FacesWorkspaceController:
 
     def load_face_table_rows(self, image_id: int) -> list[FaceTableRow]:
         """Return face table rows for one image."""
-        rows = self.conn.execute(
-            """
-            SELECT
-                COALESCE(p.primary_name, '') AS person_name,
-                COALESCE(pp.primary_name, '') AS predicted_name,
-                f.prediction_confidence
-            FROM face f
-            LEFT JOIN person p ON p.id = f.person_id
-            LEFT JOIN person pp ON pp.id = f.predicted_person_id
-            WHERE f.image_id = ?
-            ORDER BY f.id
-            """,
-            (image_id,),
-        ).fetchall()
+        rows = self.face_repo.load_face_table_rows(image_id)
         return [
             FaceTableRow(
                 person_name=str(row[0]),
@@ -322,11 +227,23 @@ class FacesWorkspaceController:
     def delete_face(self, face_id: int) -> None:
         """Delete one face and persist the change."""
         self.face_repo.delete(face_id)
+        self.audit.add(
+            action="delete",
+            entity_type="face",
+            entity_id=face_id,
+            details=json.dumps({"face_id": face_id}),
+        )
         self.conn.commit()
 
     def assign_person(self, face_id: int, person_id: int | None) -> None:
         """Assign or clear a person on one face."""
         self.face_repo.update_person(face_id, person_id)
+        self.audit.add(
+            action="assign_person",
+            entity_type="face",
+            entity_id=face_id,
+            details=json.dumps({"face_id": face_id, "person_id": person_id}),
+        )
         self.conn.commit()
 
     def create_person(self, first: str, last: str, short_name: str | None = None) -> int:
@@ -343,51 +260,3 @@ class FacesWorkspaceController:
             image_path=self.db_root / str(rel_path),
             bbox_rel=(float(x), float(y), float(w), float(h)),
         )
-
-    @staticmethod
-    def _image_mode_clause(mode: WorkspaceMode) -> str:
-        if mode == "all":
-            return ""
-        if mode == "unnamed":
-            return (
-                " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id AND f.person_id IS NULL)"
-            )
-        if mode == "predicted":
-            return (
-                " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id "
-                "AND f.predicted_person_id IS NOT NULL)"
-            )
-        if mode == "clustered":
-            return (
-                " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id "
-                "AND f.cluster_id IS NOT NULL)"
-            )
-        raise ValueError(f"Unsupported workspace mode: {mode}")
-
-    @staticmethod
-    def _face_filter_clause(filters: FaceWorkspaceFilters) -> tuple[str, list[object]]:
-        clauses = ["1 = 1"]
-        params: list[object] = []
-        if filters.folder:
-            clauses.append("i.sub_folder = ?")
-            params.append(filters.folder)
-        if filters.mode == "unnamed":
-            clauses.append("f.person_id IS NULL")
-        elif filters.mode == "predicted":
-            clauses.append("f.predicted_person_id IS NOT NULL")
-        elif filters.mode == "clustered":
-            clauses.append("f.cluster_id IS NOT NULL")
-        elif filters.mode != "all":
-            raise ValueError(f"Unsupported workspace mode: {filters.mode}")
-        if filters.confidence_min is not None:
-            clauses.append("COALESCE(f.prediction_confidence, 0) >= ?")
-            params.append(filters.confidence_min)
-        if filters.confidence_max is not None:
-            clauses.append("COALESCE(f.prediction_confidence, 0) <= ?")
-            params.append(filters.confidence_max)
-        if filters.differs_from_name:
-            clauses.append(
-                "f.predicted_person_id IS NOT NULL "
-                "AND (f.person_id IS NULL OR f.person_id != f.predicted_person_id)"
-            )
-        return " AND ".join(clauses), params

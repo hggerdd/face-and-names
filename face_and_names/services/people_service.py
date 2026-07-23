@@ -4,12 +4,14 @@ People and groups management service backed by a central registry file.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Callable
 
 from face_and_names.constants import UNKNOWN_SHORT_NAME
 from face_and_names.models.repositories import (
+    AuditLogRepository,
     GroupRepository,
     PersonAliasRepository,
     PersonGroupRepository,
@@ -29,6 +31,7 @@ class PeopleService:
         self.aliases = PersonAliasRepository(conn)
         self.groups = GroupRepository(conn)
         self.person_groups = PersonGroupRepository(conn)
+        self.audit = AuditLogRepository(conn)
         self._synchronize_registry_and_db()
         self.conn.commit()
         self.unknown_person_id = self.ensure_unknown_person()
@@ -38,6 +41,7 @@ class PeopleService:
         self,
         registry_mutation: Callable[[], object],
         db_mutation: Callable[[], object],
+        audit_mutation: Callable[[object], None] | None = None,
     ) -> object:
         """Coordinate an SQLite mutation with recoverable registry state."""
         snapshot = self.registry.snapshot()
@@ -45,6 +49,8 @@ class PeopleService:
             self.conn.execute("BEGIN")
             result = registry_mutation()
             db_mutation()
+            if audit_mutation is not None:
+                audit_mutation(result)
             self.conn.commit()
             return result
         except Exception:
@@ -90,6 +96,12 @@ class PeopleService:
                     aliases=[{"name": alias, "kind": "alias"} for alias in aliases or []],
                 ),
                 self._rewrite_person_tables,
+                lambda pid: self.audit.add(
+                    action="create",
+                    entity_type="person",
+                    entity_id=int(pid),
+                    details=json.dumps({"person_id": int(pid)}),
+                ),
             )
         )
 
@@ -101,6 +113,12 @@ class PeopleService:
         self._run_registry_db_mutation(
             lambda: self.registry.merge_people(source_ids, target_id),
             lambda: (self._remap_person_ids(mapping), self._rewrite_person_tables()),
+            lambda _result: self.audit.add(
+                action="merge",
+                entity_type="person",
+                entity_id=target_id,
+                details=json.dumps({"source_ids": to_merge, "target_id": target_id}),
+            ),
         )
 
     def add_alias(self, person_id: int, name: str, kind: str = "alias") -> int:
@@ -121,7 +139,16 @@ class PeopleService:
                     ).fetchone()[0]
                 )
 
-        self._run_registry_db_mutation(add_registry_alias, add_db_alias)
+        self._run_registry_db_mutation(
+            add_registry_alias,
+            add_db_alias,
+            lambda _result: self.audit.add(
+                action="add_alias",
+                entity_type="person",
+                entity_id=person_id,
+                details=json.dumps({"person_id": person_id, "kind": kind}),
+            ),
+        )
         return alias_id
 
     def list_people(self) -> list[dict]:
@@ -181,6 +208,12 @@ class PeopleService:
                 person_id, first_name=first_name, last_name=last_name, short_name=short_name
             ),
             self._rewrite_person_tables,
+            lambda _result: self.audit.add(
+                action="rename",
+                entity_type="person",
+                entity_id=person_id,
+                details=json.dumps({"person_id": person_id}),
+            ),
         )
 
     def ensure_unknown_person(self) -> int:
@@ -200,6 +233,12 @@ class PeopleService:
                 first_name="", last_name="", short_name=UNKNOWN_SHORT_NAME
             ),
             self._rewrite_person_tables,
+            lambda new_id: self.audit.add(
+                action="create",
+                entity_type="person",
+                entity_id=int(new_id),
+                details=json.dumps({"person_id": int(new_id), "role": "unknown"}),
+            ),
         )
         return int(pid)
 

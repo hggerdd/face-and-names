@@ -4,7 +4,10 @@ Helpers to reset image/face data while keeping people/groups intact.
 
 from __future__ import annotations
 
+import json
 import sqlite3
+
+from face_and_names.models.repositories import AuditLogRepository
 
 
 def reset_image_data(conn: sqlite3.Connection) -> None:
@@ -16,5 +19,9 @@ def reset_image_data(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM image")
     conn.execute("DELETE FROM import_session")
     conn.execute("DELETE FROM stats")
-    conn.execute("DELETE FROM audit_log")
+    AuditLogRepository(conn).add(
+        action="reset_image_data",
+        entity_type="database",
+        details=json.dumps({"scope": "images_faces_metadata_imports_stats"}),
+    )
     conn.commit()

@@ -8,6 +8,7 @@ is intentionally simple (`embed_images -> np.ndarray`) to allow test doubles.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Protocol
 
 import numpy as np
@@ -23,6 +24,7 @@ class EmbeddingConfig:
     image_size: int = 160
     normalize: bool = True
     device: str | None = None
+    weights_path: str | None = None
 
     def version_id(self) -> str:
         """Return the stable cache key for this embedding configuration."""
@@ -39,9 +41,23 @@ class FacenetEmbedder:
 
     def __init__(self, config: EmbeddingConfig | None = None) -> None:
         self.config = config or EmbeddingConfig()
+        if not self.config.weights_path:
+            raise FileNotFoundError(
+                "FaceNet weights are not configured; provide EmbeddingConfig.weights_path"
+            )
+        weights_path = Path(self.config.weights_path)
+        if not weights_path.is_file():
+            raise FileNotFoundError(f"FaceNet weights not found: {weights_path}")
         device_name = self.config.device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.device = torch.device(device_name)
-        self.model = InceptionResnetV1(pretrained=self.config.pretrained).eval().to(self.device)
+        self.model = InceptionResnetV1(pretrained=None).to(self.device)
+        state = torch.load(weights_path, map_location=self.device, weights_only=True)
+        if isinstance(state, dict) and "state_dict" in state:
+            state = state["state_dict"]
+        if not isinstance(state, dict):
+            raise ValueError(f"Unsupported FaceNet weights format: {weights_path}")
+        self.model.load_state_dict(state)
+        self.model.eval()
 
     def _preprocess(self, image: Image.Image) -> torch.Tensor:
         cfg = self.config

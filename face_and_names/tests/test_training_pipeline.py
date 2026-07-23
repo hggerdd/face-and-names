@@ -10,6 +10,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from face_and_names.models.db import initialize_database
 from face_and_names.services.prediction_service import PredictionService
 from face_and_names.training.data_loader import load_verified_faces
+from face_and_names.training.embedding import EmbeddingConfig
 from face_and_names.training.model_io import load_artifacts
 from face_and_names.training.trainer import TrainingConfig, train_model_from_db
 
@@ -154,7 +155,13 @@ def test_train_and_predict_round_trip(tmp_path: Path) -> None:
     _insert_face(conn, image_id, person_id=2, blob=_make_image_bytes("blue"))
     conn.commit()
 
-    cfg = TrainingConfig(model_dir=tmp_path / "model")
+    weights_source = tmp_path / "installed" / "facenet.pt"
+    weights_source.parent.mkdir()
+    weights_source.write_bytes(b"test weights")
+    cfg = TrainingConfig(
+        model_dir=tmp_path / "model",
+        embedding=EmbeddingConfig(weights_path=str(weights_source)),
+    )
     metrics = train_model_from_db(
         db_path,
         config=cfg,
@@ -167,6 +174,8 @@ def test_train_and_predict_round_trip(tmp_path: Path) -> None:
 
     bundle = load_artifacts(cfg.model_dir, embedder_factory=_dummy_embedder_factory)
     assert bundle.person_ids == [1, 2] or bundle.person_ids == [2, 1]
+    assert bundle.embed_config.weights_path == str(cfg.model_dir / "weights" / "facenet.pt")
+    assert (cfg.model_dir / "weights" / "facenet.pt").read_bytes() == b"test weights"
 
     service = PredictionService(model_dir=cfg.model_dir, embedder_factory=_dummy_embedder_factory)
     results = service.predict_batch([red_blob, blue_blob])

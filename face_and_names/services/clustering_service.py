@@ -5,7 +5,6 @@ Clustering service implementation using perceptual hashes of face crops.
 from __future__ import annotations
 
 import logging
-import urllib.request
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -16,24 +15,16 @@ import numpy as np
 import torch
 from facenet_pytorch import InceptionResnetV1
 from PIL import Image, ImageOps
-from sklearn.cluster import DBSCAN, KMeans
+from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 
-from face_and_names.models.repositories import FaceEmbeddingRepository
+from face_and_names.models.repositories import FaceEmbeddingRepository, FaceRepository
+from face_and_names.services.arcface_adapter import ArcFaceOnnxRunner, FaceEmbeddingRunner
 from face_and_names.services.embedding_service import VersionedEmbeddingService
 from face_and_names.training.embedding import EmbeddingConfig
 
 LOGGER = logging.getLogger(__name__)
 
 ARCFACE_MODEL_NAME = "arcface_r100_v1.onnx"
-ARCFACE_MODEL_URLS = [
-    # ONNX model zoo (ArcFace ResNet100)
-    "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/arcface/model/arcfaceresnet100-8.onnx",
-    "https://github.com/deepinsight/insightface_model_zoo/raw/master/arcface_r100_v1.onnx",
-    "https://github.com/deepinsight/insightface/releases/download/v2.0/arcface_r100_v1.onnx",
-    "https://github.com/deepinsight/insightface/releases/download/v2.1/arcface_r100_v1.onnx",
-    "https://github.com/deepinsight/insightface/releases/download/v0.0/arcface_r100_v1.onnx",
-    "https://github.com/deepinsight/insightface/releases/download/v1.0/arcface_r100_v1.onnx",
-]
 
 
 @dataclass
@@ -69,14 +60,21 @@ class ClusteringOptions:
 class ClusteringService:
     """Cluster faces by similarity and persist cluster IDs."""
 
-    def __init__(self, conn) -> None:
+    def __init__(
+        self,
+        conn,
+        *,
+        arcface_model_path: Path | None = None,
+        facenet_weights_path: Path | None = None,
+        arcface_runner: FaceEmbeddingRunner | None = None,
+    ) -> None:
         self.conn = conn
         self._embed_model: InceptionResnetV1 | None = None
-        self._arcface_model = None
-        self._arcface_recognizer = None
-        self._arcface_session = None
-        self._arcface_io: tuple[str, str] | None = None
+        self._arcface_model_path = arcface_model_path or Path(ARCFACE_MODEL_NAME)
+        self._arcface_runner = arcface_runner
+        self._facenet_weights_path = facenet_weights_path
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.face_repo = FaceRepository(conn)
         self.embedding_repo = FaceEmbeddingRepository(conn)
         self._facenet_cache: VersionedEmbeddingService | None = None
 
@@ -99,6 +97,10 @@ class ClusteringService:
             )
         elif algo == "kmeans":
             labels = self._run_kmeans(X, n_clusters=int(opts.k_clusters))
+        elif algo in {"hierarchical", "agglomerative"}:
+            labels = self._run_hierarchical(
+                X, distance_threshold=opts.eps, metric=self._distance_metric(opts.feature_source)
+            )
         else:
             raise ValueError(f"Unsupported algorithm: {opts.algorithm}")
 
@@ -130,41 +132,11 @@ class ClusteringService:
         return results
 
     def _load_faces(self, opts: ClusteringOptions) -> Iterable[tuple]:
-        params: list = []
-        filters: list[str] = []
-
-        if opts.last_import_only:
-            last_import = self.conn.execute("SELECT MAX(id) FROM import_session").fetchone()[0]
-            if last_import is not None:
-                filters.append("i.import_id = ?")
-                params.append(last_import)
-        if opts.folders:
-            placeholders = ", ".join("?" for _ in opts.folders)
-            filters.append(f"i.sub_folder IN ({placeholders})")
-            params.extend(opts.folders)
-        if opts.exclude_named:
-            filters.append("f.person_id IS NULL")
-
-        where_clause = ""
-        if filters:
-            where_clause = "WHERE " + " AND ".join(filters)
-
-        rows = self.conn.execute(
-            f"""
-            SELECT
-                f.id,
-                f.face_crop_blob,
-                p.primary_name AS person_name,
-                pp.primary_name AS predicted_name,
-                f.prediction_confidence
-            FROM face f
-            JOIN image i ON i.id = f.image_id
-            LEFT JOIN person p ON p.id = f.person_id
-            LEFT JOIN person pp ON pp.id = f.predicted_person_id
-            {where_clause}
-            """,
-            params,
-        ).fetchall()
+        rows = self.face_repo.list_faces_for_clustering(
+            last_import_only=opts.last_import_only,
+            folders=opts.folders,
+            exclude_named=opts.exclude_named,
+        )
         for row in rows:
             if row[1] is None:
                 continue
@@ -200,7 +172,7 @@ class ClusteringService:
         self, face_id: int, crop_bytes: bytes, img: Image.Image, opts: ClusteringOptions
     ) -> np.ndarray:
         model_name = "arcface_onnx"
-        model_version = f"{ARCFACE_MODEL_NAME}:size=112:norm"
+        model_version = f"{self._arcface_model_path.name}:size=112:norm"
         crop_hash = VersionedEmbeddingService.crop_sha256(crop_bytes)
         cached = self.embedding_repo.get(
             face_id=face_id,
@@ -265,7 +237,22 @@ class ClusteringService:
 
     def _load_embed_model(self) -> InceptionResnetV1:
         if self._embed_model is None:
-            self._embed_model = InceptionResnetV1(pretrained="vggface2").eval().to(self._device)
+            if self._facenet_weights_path is None or not self._facenet_weights_path.is_file():
+                raise FileNotFoundError(
+                    "FaceNet weights are not configured; provide facenet_weights_path"
+                )
+            self._embed_model = InceptionResnetV1(pretrained=None).to(self._device)
+            state = torch.load(
+                self._facenet_weights_path, map_location=self._device, weights_only=True
+            )
+            if isinstance(state, dict) and "state_dict" in state:
+                state = state["state_dict"]
+            if not isinstance(state, dict):
+                raise ValueError(
+                    f"Unsupported FaceNet weights format: {self._facenet_weights_path}"
+                )
+            self._embed_model.load_state_dict(state)
+            self._embed_model.eval()
         return self._embed_model
 
     def _arcface_vector(self, img: Image.Image, opts: ClusteringOptions) -> np.ndarray:
@@ -274,71 +261,12 @@ class ClusteringService:
         Requires `insightface`; falls back to FaceNet embedding if unavailable.
         """
         try:
-            pass  # type: ignore
-        except Exception as exc:  # pragma: no cover - optional dependency
-            LOGGER.warning(
-                "ArcFace embedding unavailable (insightface missing): %s; using FaceNet", exc
-            )
-            return self._embedding_vector(img, opts)
-
-        if self._arcface_session is None:
-            if not self._load_arcface_onnx():
-                return self._embedding_vector(img, opts)
-
-        proc = img.convert("RGB").resize((112, 112), Image.Resampling.BILINEAR)
-        arr = np.asarray(proc, dtype=np.float32)
-        arr = (arr - 127.5) / 128.0
-        arr = np.transpose(arr, (2, 0, 1))  # CHW
-        arr = arr.reshape(1, 3, 112, 112)
-        try:
-            inp, out = self._arcface_io or ("data", "fc1")
-            res = self._arcface_session.run([out], {inp: arr})
-            emb = res[0][0]
-        except Exception as exc:  # pragma: no cover
+            if self._arcface_runner is None:
+                self._arcface_runner = ArcFaceOnnxRunner(self._arcface_model_path)
+            return self._arcface_runner.embed(img)
+        except (FileNotFoundError, ImportError, RuntimeError, ValueError) as exc:
             LOGGER.warning("ArcFace ONNX embedding failed: %s; using FaceNet", exc)
             return self._embedding_vector(img, opts)
-        vec = np.asarray(emb, dtype=np.float32).reshape(-1)
-        norm = np.linalg.norm(vec)
-        if norm > 0:
-            vec = vec / norm
-        return vec
-
-    def _load_arcface_onnx(self) -> bool:
-        """Load ArcFace ONNX model via onnxruntime; returns True on success."""
-        try:
-            import onnxruntime as ort  # type: ignore
-        except Exception as exc:
-            LOGGER.warning("ArcFace ONNX runtime missing: %s; using FaceNet", exc)
-            return False
-
-        model_path = Path(ARCFACE_MODEL_NAME)
-        if not model_path.exists():
-            if not self._download_arcface_model(model_path):
-                return False
-
-        providers = ["CPUExecutionProvider"]
-        try:
-            session = ort.InferenceSession(str(model_path), providers=providers)
-            inp = session.get_inputs()[0].name
-            out = session.get_outputs()[0].name
-            self._arcface_session = session
-            self._arcface_io = (inp, out)
-            return True
-        except Exception as exc:
-            LOGGER.warning("ArcFace ONNX load failed: %s; using FaceNet", exc)
-            return False
-
-    def _download_arcface_model(self, path: Path) -> bool:
-        for url in ARCFACE_MODEL_URLS:
-            try:
-                LOGGER.info("Downloading ArcFace model from %s", url)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                urllib.request.urlretrieve(url, path)
-                return True
-            except Exception as exc:
-                LOGGER.warning("Download failed from %s: %s", url, exc)
-        LOGGER.error("All ArcFace model downloads failed; place %s manually", path)
-        return False
 
     @staticmethod
     def _distance_metric(feature_source: str) -> str:
@@ -361,6 +289,19 @@ class ClusteringService:
         # shift labels to start at 1; kmeans has no noise notion, so 0 is a valid cluster
         return labels + 1
 
+    def _run_hierarchical(
+        self, X: np.ndarray, distance_threshold: float, metric: str
+    ) -> np.ndarray:
+        if len(X) <= 1:
+            return np.zeros(len(X), dtype=int)
+        model = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=max(0.0, distance_threshold),
+            metric=metric,
+            linkage="average",
+        )
+        return model.fit_predict(X)
+
     def _renumber_labels(self, labels: np.ndarray) -> list[int]:
         mapping: dict[int, int] = {}
         next_label = 1
@@ -377,5 +318,5 @@ class ClusteringService:
 
     def _persist_cluster_ids(self, faces: list[tuple], cluster_ids: list[int]) -> None:
         rows = [(cid, face_id) for (face_id, *_), cid in zip(faces, cluster_ids)]
-        self.conn.executemany("UPDATE face SET cluster_id = ? WHERE id = ?", rows)
+        self.face_repo.update_cluster_ids(rows)
         self.conn.commit()

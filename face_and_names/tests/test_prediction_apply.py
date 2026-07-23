@@ -17,6 +17,10 @@ def db():
     )
     conn.execute("CREATE TABLE image (id INTEGER PRIMARY KEY, relative_path TEXT, filename TEXT)")
     conn.execute(
+        "CREATE TABLE audit_log (id INTEGER PRIMARY KEY, action TEXT, entity_type TEXT, "
+        "details TEXT, entity_id INTEGER, actor TEXT)"
+    )
+    conn.execute(
         "INSERT INTO image (id, relative_path, filename) VALUES (1, 'path/to/img.jpg', 'img.jpg')"
     )
     return conn

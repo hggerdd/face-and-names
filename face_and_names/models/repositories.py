@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Iterable, Mapping, Sequence
 
 
@@ -104,6 +105,9 @@ class ImageRepository:
         row = cursor.fetchone()
         return int(row[0]) if row else None
 
+    def delete(self, image_id: int) -> None:
+        self.conn.execute("DELETE FROM image WHERE id = ?", (image_id,))
+
 
 class MetadataRepository:
     """Metadata key/value storage per image."""
@@ -193,6 +197,105 @@ class FaceRepository:
     def update_person(self, face_id: int, person_id: int | None) -> None:
         self.conn.execute("UPDATE face SET person_id = ? WHERE id = ?", (person_id, face_id))
 
+    def assign_person_to_faces(self, face_ids: Sequence[int], person_id: int | None) -> int:
+        if not face_ids:
+            return 0
+        placeholders = ", ".join("?" for _ in face_ids)
+        cursor = self.conn.execute(
+            f"UPDATE face SET person_id = ? WHERE id IN ({placeholders})",
+            [person_id, *face_ids],
+        )
+        return int(cursor.rowcount)
+
+    def accept_predictions(self, face_ids: Sequence[int]) -> int:
+        if not face_ids:
+            return 0
+        placeholders = ", ".join("?" for _ in face_ids)
+        cursor = self.conn.execute(
+            f"""
+            UPDATE face
+            SET person_id = predicted_person_id
+            WHERE id IN ({placeholders}) AND predicted_person_id IS NOT NULL
+            """,
+            list(face_ids),
+        )
+        return int(cursor.rowcount)
+
+    def list_prediction_candidates(self, unnamed_only: bool = False) -> list[tuple]:
+        """Return face crops and labels eligible for batch prediction."""
+        clause = "AND f.person_id IS NULL" if unnamed_only else ""
+        return self.conn.execute(
+            f"""
+            SELECT f.id, f.face_crop_blob, i.relative_path, i.filename
+            FROM face f
+            JOIN image i ON i.id = f.image_id
+            WHERE f.face_crop_blob IS NOT NULL {clause}
+            ORDER BY f.id
+            """
+        ).fetchall()
+
+    def update_prediction(
+        self,
+        face_id: int,
+        person_id: int | None,
+        confidence: float | None,
+        assign_person: bool = False,
+    ) -> None:
+        if assign_person:
+            self.conn.execute(
+                """
+                UPDATE face
+                SET person_id = ?, predicted_person_id = ?, prediction_confidence = ?
+                WHERE id = ?
+                """,
+                (person_id, person_id, confidence, face_id),
+            )
+        else:
+            self.conn.execute(
+                """
+                UPDATE face
+                SET predicted_person_id = ?, prediction_confidence = ?
+                WHERE id = ?
+                """,
+                (person_id, confidence, face_id),
+            )
+
+    def list_faces_for_clustering(
+        self,
+        *,
+        last_import_only: bool = False,
+        folders: Sequence[str] | None = None,
+        exclude_named: bool = False,
+    ) -> list[tuple]:
+        """Load face crops and labels for clustering workflows."""
+        params: list[object] = []
+        filters: list[str] = []
+        if last_import_only:
+            filters.append("i.import_id = (SELECT MAX(id) FROM import_session)")
+        if folders:
+            placeholders = ", ".join("?" for _ in folders)
+            filters.append(f"i.sub_folder IN ({placeholders})")
+            params.extend(folders)
+        if exclude_named:
+            filters.append("f.person_id IS NULL")
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        return self.conn.execute(
+            f"""
+            SELECT f.id, f.face_crop_blob, p.primary_name, pp.primary_name,
+                   f.prediction_confidence
+            FROM face f
+            JOIN image i ON i.id = f.image_id
+            LEFT JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            {where}
+            """,
+            params,
+        ).fetchall()
+
+    def update_cluster_ids(self, assignments: Iterable[tuple[int, int]]) -> None:
+        """Persist face cluster assignments in one repository operation."""
+        self.conn.executemany("UPDATE face SET cluster_id = ? WHERE id = ?", assignments)
+
     def get_face_with_image(self, face_id: int) -> tuple | None:
         cursor = self.conn.execute(
             """
@@ -205,6 +308,256 @@ class FaceRepository:
             (face_id,),
         )
         return cursor.fetchone()
+
+    def list_image_folders(self) -> list[str]:
+        rows = self.conn.execute("SELECT DISTINCT sub_folder FROM image ORDER BY sub_folder")
+        return [str(row[0]) for row in rows]
+
+    def load_images(
+        self, folder: str, mode: str, *, limit: int, offset: int
+    ) -> tuple[list[tuple], int]:
+        mode_clause = self._image_mode_clause(mode)
+        total = int(
+            self.conn.execute(
+                f"SELECT COUNT(*) FROM image i WHERE i.sub_folder = ?{mode_clause}", (folder,)
+            ).fetchone()[0]
+        )
+        rows = self.conn.execute(
+            f"""
+            SELECT id, filename, relative_path, thumbnail_blob, width, height
+            FROM image i
+            WHERE i.sub_folder = ?{mode_clause}
+            ORDER BY filename
+            LIMIT ? OFFSET ?
+            """,
+            (folder, limit, offset),
+        ).fetchall()
+        return rows, total
+
+    def workspace_summary(self, folder: str | None = None) -> tuple[int, tuple]:
+        image_where = ""
+        face_where = ""
+        params: list[object] = []
+        if folder is not None:
+            image_where = " WHERE sub_folder = ?"
+            face_where = " WHERE i.sub_folder = ?"
+            params.append(folder)
+        images = int(
+            self.conn.execute(f"SELECT COUNT(*) FROM image{image_where}", params).fetchone()[0]
+        )
+        faces = self.conn.execute(
+            f"""
+            SELECT COUNT(f.id),
+                   SUM(CASE WHEN f.person_id IS NULL THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN f.predicted_person_id IS NOT NULL THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN f.cluster_id IS NOT NULL THEN 1 ELSE 0 END)
+            FROM face f JOIN image i ON i.id = f.image_id{face_where}
+            """,
+            params,
+        ).fetchone()
+        return images, faces
+
+    def load_face_page(
+        self,
+        *,
+        folder: str | None,
+        mode: str,
+        confidence_min: float | None,
+        confidence_max: float | None,
+        differs_from_name: bool,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[tuple], int]:
+        where, params = self._face_filter_clause(
+            folder, mode, confidence_min, confidence_max, differs_from_name
+        )
+        total = int(
+            self.conn.execute(
+                f"""
+                SELECT COUNT(*) FROM face f JOIN image i ON i.id = f.image_id
+                LEFT JOIN person p ON p.id = f.person_id
+                LEFT JOIN person pp ON pp.id = f.predicted_person_id
+                WHERE {where}
+                """,
+                params,
+            ).fetchone()[0]
+        )
+        rows = self.conn.execute(
+            f"""
+            SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id,
+                   pp.primary_name, f.prediction_confidence, f.face_crop_blob,
+                   f.image_id, i.filename, i.relative_path, f.cluster_id
+            FROM face f JOIN image i ON i.id = f.image_id
+            LEFT JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            WHERE {where}
+            ORDER BY i.filename, f.id
+            LIMIT ? OFFSET ?
+            """,
+            [*params, limit, offset],
+        ).fetchall()
+        return rows, total
+
+    def load_face_boxes(self, image_id: int) -> list[tuple]:
+        return self.conn.execute(
+            """
+            SELECT bbox_rel_x, bbox_rel_y, bbox_rel_w, bbox_rel_h
+            FROM face WHERE image_id = ?
+            """,
+            (image_id,),
+        ).fetchall()
+
+    def load_face_tiles(self, image_id: int) -> list[tuple]:
+        return self.conn.execute(
+            """
+            SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id,
+                   pp.primary_name, f.prediction_confidence, f.face_crop_blob
+            FROM face f
+            LEFT JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            WHERE f.image_id = ? ORDER BY f.id
+            """,
+            (image_id,),
+        ).fetchall()
+
+    def load_face_table_rows(self, image_id: int) -> list[tuple]:
+        return self.conn.execute(
+            """
+            SELECT COALESCE(p.primary_name, ''), COALESCE(pp.primary_name, ''),
+                   f.prediction_confidence
+            FROM face f
+            LEFT JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            WHERE f.image_id = ? ORDER BY f.id
+            """,
+            (image_id,),
+        ).fetchall()
+
+    def prediction_counts(self) -> list[tuple]:
+        return self.conn.execute(
+            """
+            SELECT predicted_person_id, COUNT(*) FROM face
+            WHERE predicted_person_id IS NOT NULL AND person_id IS NULL
+            GROUP BY predicted_person_id
+            """
+        ).fetchall()
+
+    def count_prediction_faces(
+        self,
+        predicted_person_id: int | None,
+        confidence_min: float,
+        confidence_max: float,
+        unnamed_only: bool,
+    ) -> int:
+        where, params = self._prediction_filter_clause(
+            predicted_person_id, confidence_min, confidence_max, unnamed_only
+        )
+        return int(
+            self.conn.execute(f"SELECT COUNT(*) FROM face f WHERE {where}", params).fetchone()[0]
+        )
+
+    def load_prediction_faces(
+        self,
+        predicted_person_id: int | None,
+        confidence_min: float,
+        confidence_max: float,
+        unnamed_only: bool,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[tuple]:
+        where, params = self._prediction_filter_clause(
+            predicted_person_id, confidence_min, confidence_max, unnamed_only
+        )
+        return self.conn.execute(
+            f"""
+            SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id,
+                   pp.primary_name, f.prediction_confidence, f.face_crop_blob
+            FROM face f
+            LEFT JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            WHERE {where}
+            ORDER BY COALESCE(f.prediction_confidence, 0) DESC, f.id
+            LIMIT ? OFFSET ?
+            """,
+            [*params, limit, offset],
+        ).fetchall()
+
+    @staticmethod
+    def _prediction_filter_clause(
+        predicted_person_id: int | None,
+        confidence_min: float,
+        confidence_max: float,
+        unnamed_only: bool,
+    ) -> tuple[str, list[object]]:
+        clauses = ["f.predicted_person_id IS NOT NULL"]
+        params: list[object] = []
+        if predicted_person_id is not None:
+            clauses.append("f.predicted_person_id = ?")
+            params.append(predicted_person_id)
+        if unnamed_only:
+            clauses.append("f.person_id IS NULL")
+        clauses.append("COALESCE(f.prediction_confidence, 0) BETWEEN ? AND ?")
+        params.extend([confidence_min, confidence_max])
+        return " AND ".join(clauses), params
+
+    def list_image_subfolders(self) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT DISTINCT sub_folder FROM image WHERE sub_folder != '' ORDER BY sub_folder"
+        ).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def get_face_assignment(self, face_id: int) -> tuple | None:
+        return self.conn.execute(
+            "SELECT person_id, predicted_person_id FROM face WHERE id = ?", (face_id,)
+        ).fetchone()
+
+    @staticmethod
+    def _image_mode_clause(mode: str) -> str:
+        clauses = {
+            "all": "",
+            "unnamed": " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id AND f.person_id IS NULL)",
+            "predicted": " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id AND f.predicted_person_id IS NOT NULL)",
+            "clustered": " AND EXISTS (SELECT 1 FROM face f WHERE f.image_id = i.id AND f.cluster_id IS NOT NULL)",
+        }
+        try:
+            return clauses[mode]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported workspace mode: {mode}") from exc
+
+    @staticmethod
+    def _face_filter_clause(
+        folder: str | None,
+        mode: str,
+        confidence_min: float | None,
+        confidence_max: float | None,
+        differs_from_name: bool,
+    ) -> tuple[str, list[object]]:
+        clauses = ["1 = 1"]
+        params: list[object] = []
+        if folder:
+            clauses.append("i.sub_folder = ?")
+            params.append(folder)
+        if mode == "unnamed":
+            clauses.append("f.person_id IS NULL")
+        elif mode == "predicted":
+            clauses.append("f.predicted_person_id IS NOT NULL")
+        elif mode == "clustered":
+            clauses.append("f.cluster_id IS NOT NULL")
+        elif mode != "all":
+            raise ValueError(f"Unsupported workspace mode: {mode}")
+        if confidence_min is not None:
+            clauses.append("COALESCE(f.prediction_confidence, 0) >= ?")
+            params.append(confidence_min)
+        if confidence_max is not None:
+            clauses.append("COALESCE(f.prediction_confidence, 0) <= ?")
+            params.append(confidence_max)
+        if differs_from_name:
+            clauses.append(
+                "f.predicted_person_id IS NOT NULL AND "
+                "(f.person_id IS NULL OR f.person_id != f.predicted_person_id)"
+            )
+        return " AND ".join(clauses), params
 
 
 @dataclass(frozen=True)
@@ -440,3 +793,157 @@ class AuditLogRepository:
             (action, entity_type, details, entity_id, actor),
         )
         return int(cursor.lastrowid)
+
+
+class PeopleGroupsRepository:
+    """Read/query boundary for the People & Groups page."""
+
+    _SHOT_DATE_SQL = """
+        COALESCE(
+            (SELECT value FROM metadata m2
+             WHERE m2.image_id = {img}.id
+               AND m2.key IN ('DateTimeOriginal', 'DateTimeDigitized', 'DateTime', 'CreateDate')
+             ORDER BY CASE m2.key
+                 WHEN 'DateTimeOriginal' THEN 1 WHEN 'DateTimeDigitized' THEN 2
+                 WHEN 'DateTime' THEN 3 WHEN 'CreateDate' THEN 4 ELSE 5 END
+             LIMIT 1),
+            {session}.import_date
+        )
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def count_faces(self, person_id: int, start: datetime | None, end: datetime | None) -> int:
+        params: list[object] = [person_id]
+        clause = self._date_filter(params, start, end)
+        return int(
+            self.conn.execute(
+                f"""
+                SELECT COUNT(*) FROM face f JOIN image i ON i.id = f.image_id
+                LEFT JOIN import_session s ON s.id = i.import_id
+                WHERE f.person_id = ? {clause}
+                """,
+                params,
+            ).fetchone()[0]
+        )
+
+    def count_images(self, person_id: int, start: datetime | None, end: datetime | None) -> int:
+        params: list[object] = [person_id]
+        clause = self._date_filter(params, start, end)
+        return int(
+            self.conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT i.id) FROM face f JOIN image i ON i.id = f.image_id
+                LEFT JOIN import_session s ON s.id = i.import_id
+                WHERE f.person_id = ? {clause}
+                """,
+                params,
+            ).fetchone()[0]
+        )
+
+    def fetch_faces(
+        self,
+        person_id: int,
+        limit: int,
+        offset: int,
+        sort_key: str,
+        start: datetime | None,
+        end: datetime | None,
+    ) -> list[tuple]:
+        params: list[object] = [person_id]
+        clause = self._date_filter(params, start, end)
+        order = self._order_by(sort_key)
+        return self.conn.execute(
+            f"""
+            SELECT f.id, f.person_id, p.primary_name, f.predicted_person_id, pp.primary_name,
+                   f.prediction_confidence, f.face_crop_blob
+            FROM face f JOIN person p ON p.id = f.person_id
+            LEFT JOIN person pp ON pp.id = f.predicted_person_id
+            JOIN image i ON i.id = f.image_id
+            LEFT JOIN import_session s ON s.id = i.import_id
+            WHERE f.person_id = ? {clause}
+            ORDER BY {order} LIMIT ? OFFSET ?
+            """,
+            [*params, limit, offset],
+        ).fetchall()
+
+    def fetch_images(
+        self,
+        person_id: int,
+        limit: int,
+        offset: int,
+        sort_key: str,
+        start: datetime | None,
+        end: datetime | None,
+    ) -> list[tuple]:
+        params: list[object] = [person_id]
+        clause = self._date_filter(params, start, end)
+        order = self._order_by(sort_key)
+        return self.conn.execute(
+            f"""
+            SELECT DISTINCT i.id, f.person_id, p.primary_name, i.thumbnail_blob, i.relative_path
+            FROM face f JOIN image i ON i.id = f.image_id
+            JOIN person p ON p.id = f.person_id
+            LEFT JOIN import_session s ON s.id = i.import_id
+            WHERE f.person_id = ? {clause}
+            ORDER BY {order} LIMIT ? OFFSET ?
+            """,
+            [*params, limit, offset],
+        ).fetchall()
+
+    def dates_for_person(self, person_id: int) -> list[str | None]:
+        shot = self._shot_date_sql()
+        return [
+            row[1]
+            for row in self.conn.execute(
+                f"""
+                SELECT DISTINCT i.id, {shot}
+                FROM face f JOIN image i ON i.id = f.image_id
+                LEFT JOIN import_session s ON s.id = i.import_id
+                WHERE f.person_id = ?
+                """,
+                (person_id,),
+            ).fetchall()
+        ]
+
+    def date_for_face(self, face_id: int) -> str | None:
+        shot = self._shot_date_sql()
+        row = self.conn.execute(
+            f"""
+            SELECT {shot} FROM face f JOIN image i ON i.id = f.image_id
+            LEFT JOIN import_session s ON s.id = i.import_id WHERE f.id = ?
+            """,
+            (face_id,),
+        ).fetchone()
+        return None if row is None else row[0]
+
+    def date_for_image(self, image_id: int) -> str | None:
+        row = self.conn.execute(
+            """
+            SELECT COALESCE((SELECT value FROM metadata m2 WHERE m2.image_id = ?
+                AND m2.key IN ('DateTimeOriginal', 'DateTimeDigitized', 'DateTime', 'CreateDate')
+                ORDER BY CASE m2.key WHEN 'DateTimeOriginal' THEN 1
+                    WHEN 'DateTimeDigitized' THEN 2 WHEN 'DateTime' THEN 3
+                    WHEN 'CreateDate' THEN 4 ELSE 5 END LIMIT 1), import_date)
+            FROM import_session WHERE id = (SELECT import_id FROM image WHERE id = ?)
+            """,
+            (image_id, image_id),
+        ).fetchone()
+        return None if row is None else row[0]
+
+    def _shot_date_sql(self) -> str:
+        return self._SHOT_DATE_SQL.format(img="i", session="s")
+
+    def _order_by(self, sort_key: str) -> str:
+        direction = "ASC" if sort_key == "date_asc" else "DESC"
+        return f"COALESCE({self._shot_date_sql()}, '') {direction}, i.id {direction}"
+
+    def _date_filter(
+        self, params: list[object], start: datetime | None, end: datetime | None
+    ) -> str:
+        if start is None or end is None:
+            return ""
+        date_expr = f"date(REPLACE(SUBSTR(COALESCE({self._shot_date_sql()}, '1900-01-01'), 1, 10), ':', '-'))"
+        params.extend([start.date().isoformat(), end.date().isoformat()])
+        return f"AND {date_expr} BETWEEN ? AND ?"

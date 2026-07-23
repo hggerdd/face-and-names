@@ -5,6 +5,7 @@ Prediction service backed by persisted model artifacts.
 from __future__ import annotations
 
 import io
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -15,6 +16,8 @@ from PIL import Image
 from face_and_names.services.embedding_service import VersionedEmbeddingService
 from face_and_names.training.embedding import EmbeddingConfig, EmbeddingModel, FacenetEmbedder
 from face_and_names.training.model_io import ModelBundle, load_artifacts
+
+LOGGER = logging.getLogger(__name__)
 
 
 class PredictionService:
@@ -37,7 +40,11 @@ class PredictionService:
         self.conn = conn
 
     def _load(self) -> None:
-        self.bundle = load_artifacts(self.model_dir, embedder_factory=self.embedder_factory)
+        try:
+            self.bundle = load_artifacts(self.model_dir, embedder_factory=self.embedder_factory)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            LOGGER.warning("Prediction model unavailable: %s", exc)
+            self.bundle = None
 
     def predict_batch(
         self,

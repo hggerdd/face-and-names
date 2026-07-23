@@ -3,6 +3,7 @@ Command-line entry point to train the prediction model from verified faces.
 
 Usage:
     uv run python -m face_and_names.train_model [--db PATH] [--model-dir DIR]
+        --weights-path PATH
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 from pathlib import Path
 
 from face_and_names.app_context import initialize_app
+from face_and_names.training.embedding import EmbeddingConfig
 from face_and_names.training.trainer import TrainingConfig, train_model_from_db
 
 
@@ -23,10 +25,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--model-dir", type=Path, default=Path("model"), help="Output directory for artifacts."
     )
+    parser.add_argument(
+        "--weights-path",
+        type=Path,
+        required=True,
+        help="Path to an already-installed FaceNet weights file; no download is attempted.",
+    )
     args = parser.parse_args(argv)
 
     context = initialize_app(db_path=args.db)
-    cfg = TrainingConfig(model_dir=args.model_dir)
+    cfg = TrainingConfig(
+        model_dir=args.model_dir,
+        embedding=EmbeddingConfig(weights_path=str(args.weights_path)),
+    )
     metrics = train_model_from_db(context.db_path, config=cfg)
     print(json.dumps(metrics, indent=2))
     # Pretty print confusion matrix if available

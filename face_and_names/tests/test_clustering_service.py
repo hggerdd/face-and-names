@@ -3,10 +3,13 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from face_and_names.models.db import initialize_database
+from face_and_names.services.arcface_adapter import ArcFaceOnnxRunner
 from face_and_names.services.clustering_service import ClusteringOptions, ClusteringService
+from face_and_names.training.embedding import EmbeddingConfig, FacenetEmbedder
 
 
 def _insert_import_and_faces(conn, db_root: Path) -> None:
@@ -191,3 +194,28 @@ def test_clustering_distance_metric_matches_feature_type(tmp_path: Path) -> None
     assert service._distance_metric("embedding") == "cosine"
     assert service._distance_metric("arcface") == "cosine"
     assert service._distance_metric("raw") == "cosine"
+
+
+def test_hierarchical_clustering_is_supported(tmp_path: Path) -> None:
+    conn = initialize_database(tmp_path / "faces.db")
+    _insert_import_and_faces(conn, tmp_path)
+
+    service = ClusteringService(conn)
+    results = service.cluster_faces(
+        ClusteringOptions(algorithm="hierarchical", eps=0.01, min_samples=1)
+    )
+
+    assert results
+    assert all(row[0] is not None for row in conn.execute("SELECT cluster_id FROM face"))
+
+
+def test_arcface_runner_requires_an_installed_model(tmp_path: Path) -> None:
+    runner = ArcFaceOnnxRunner(tmp_path / "missing.onnx")
+
+    with pytest.raises(FileNotFoundError, match="ArcFace model not found"):
+        runner.embed(Image.new("RGB", (10, 10), color="red"))
+
+
+def test_facenet_embedder_requires_explicit_weights(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="FaceNet weights"):
+        FacenetEmbedder(EmbeddingConfig(weights_path=str(tmp_path / "missing.pt")))

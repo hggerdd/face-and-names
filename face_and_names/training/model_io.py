@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,8 +54,20 @@ def save_artifacts(
         json.dumps({"person_ids": person_ids}, indent=2), encoding="utf-8"
     )
 
+    embedding_payload = dict(embed_config.__dict__)
+    if embed_config.weights_path:
+        source = Path(embed_config.weights_path)
+        if not source.is_file():
+            raise FileNotFoundError(f"Embedding weights not found: {source}")
+        weights_dir = model_dir / "weights"
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        destination = weights_dir / source.name
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        embedding_payload["weights_path"] = str(Path("weights") / source.name)
+
     (model_dir / "embedding_config.json").write_text(
-        json.dumps(embed_config.__dict__, indent=2), encoding="utf-8"
+        json.dumps(embedding_payload, indent=2), encoding="utf-8"
     )
 
     (model_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
@@ -86,6 +99,9 @@ def load_artifacts(
     person_ids = [int(pid) for pid in (mapping.get("person_ids") or [])]
 
     cfg_dict = json.loads(embed_cfg_file.read_text(encoding="utf-8"))
+    configured_weights = cfg_dict.get("weights_path")
+    if configured_weights and not Path(configured_weights).is_absolute():
+        cfg_dict["weights_path"] = str(model_dir / configured_weights)
     embed_config = EmbeddingConfig(**cfg_dict)
     embedder = embedder_factory(embed_config)
 
